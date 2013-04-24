@@ -20,6 +20,7 @@ from nova.compute import utils as compute_utils
 from nova import exception
 from nova import manager
 from nova import network
+from nova.object import base as nova_object
 from nova.network.security_group import openstack_driver
 from nova import notifications
 from nova.openstack.common import jsonutils
@@ -440,3 +441,15 @@ class ConductorManager(manager.Manager):
 
     def compute_unrescue(self, context, instance):
         self.compute_api.unrescue(context, instance)
+
+    # TOTAL HACK
+    # Just using conductor's regular method API as an easy spot to
+    # house this for the moment
+    def object_class_action(self, context, objname, objmethod, **kwargs):
+        objclass = nova_object.NovaObject.class_from_name(objname)
+        return getattr(objclass, objmethod)(context, **kwargs)
+
+    def object_action(self, context, objinst, objmethod, **kwargs):
+        # FIXME: this should happen for us in the RPC layer
+        objinst = nova_object.NovaObject.from_primitive(objinst)
+        return getattr(objinst, objmethod)(context, **kwargs)

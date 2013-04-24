@@ -118,12 +118,13 @@ class _BaseTestCase(object):
                               self._do_update, 'any-uuid', foobar=1)
 
     def test_migration_get(self):
-        migration = db.migration_create(self.context.elevated(),
+        db_migration = db.migration_create(self.context.elevated(),
                 {'instance_uuid': 'fake-uuid',
                  'status': 'migrating'})
+        migration = self.conductor.migration_get(self.context,
+                                                 db_migration['id'])
         self.assertEqual(jsonutils.to_primitive(migration),
-                         self.conductor.migration_get(self.context,
-                                                      migration['id']))
+                         dict(migration.iteritems()))
 
     def test_migration_get_unconfirmed_by_dest_compute(self):
         self.mox.StubOutWithMock(db,
