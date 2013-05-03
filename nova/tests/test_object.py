@@ -109,6 +109,17 @@ class TestObject(test.TestCase):
                                          'bar': 'loaded!'}}
         self.assertEqual(obj.to_primitive(), expected)
 
+    def test_changes_in_primitive(self):
+        mig = migration.Migration()
+        mig.id = 123
+        self.assertEqual(mig.what_changed(), set(['id']))
+        primitive = mig.to_primitive()
+        self.assertTrue('nova_object.changes' in primitive)
+        mig2 = migration.Migration.from_primitive(primitive)
+        self.assertEqual(mig2.what_changed(), set(['id']))
+        mig2.reset_changes()
+        self.assertEqual(mig2.what_changed(), set())
+
 
 class TestMigrationObject(test.TestCase):
     def test_hydration(self):

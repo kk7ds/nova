@@ -113,6 +113,8 @@ class NovaObject(object):
         for name in self.fields:
             if name in data:
                 setattr(self, name, data[name])
+        changes = primitive.get('nova_object.changes', [])
+        self._changed_fields = set([x for x in changes if x in self.fields])
         return self
 
     def to_primitive(self):
@@ -121,8 +123,11 @@ class NovaObject(object):
         for name in self.fields:
             if hasattr(self, get_attrname(name)):
                 primitive[name] = getattr(self, name)
-        return {'nova_object.name': self.objname(),
-                'nova_object.data': primitive}
+        obj = {'nova_object.name': self.objname(),
+               'nova_object.data': primitive}
+        if self.what_changed():
+            obj['nova_object.changes'] = self.what_changed()
+        return obj
 
     def load(self, attrname):
         """Load an additional attribute from the real object.
@@ -138,6 +143,13 @@ class NovaObject(object):
 
     def what_changed(self):
         return self._changed_fields
+
+    def reset_changes(self):
+        """Reset the list of fields that have been changed.
+
+        Note that this is NOT "revert to previous values"
+        """
+        self._changed_fields.clear()
 
     # dictish syntactic sugar
     def iteritems(self):
