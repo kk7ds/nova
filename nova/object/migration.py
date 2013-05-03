@@ -39,10 +39,12 @@ class Migration(base.NovaObject):
 
     @base.magic
     def save(self, context):
-        if self.what_changed() == 'status':
-            db.migration_update(context, self.id, self.status)
-        else:
-            raise Exception("poo")
+        # Pretend we have a real implementation here and just make it
+        # work with the existing db api for now
+        updates = dict()
+        for field in self.what_changed():
+            updates[field] = self[field]
+        db.migration_update(context, self.id, updates)
 
     @base.magic_static
     def get(cls, context, migration_id):
@@ -52,4 +54,5 @@ class Migration(base.NovaObject):
         # Naively construct a migration object
         for attr in cls.fields:
             setattr(migration, attr, db_migration[attr])
+        migration.reset_changes()
         return migration
