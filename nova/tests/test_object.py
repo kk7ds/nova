@@ -76,7 +76,7 @@ class TestObject(test.TestCase):
                     'nova_object.data': {'foo': 1}}
         obj = MyObj()
         obj.foo = 1
-        print dir(obj)
+        obj.reset_changes()
         self.assertEqual(obj.to_primitive(), expected)
 
     def test_object_property(self):
@@ -103,6 +103,7 @@ class TestObject(test.TestCase):
     def test_loaded_in_primitive(self):
         obj = MyObj()
         obj.foo = 1
+        obj.reset_changes()
         self.assertEqual(obj.bar, 'loaded!')
         expected = {'nova_object.name': 'MyObj',
                     'nova_object.data': {'foo': 1,
