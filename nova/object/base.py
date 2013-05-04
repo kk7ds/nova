@@ -126,7 +126,7 @@ class NovaObject(object):
         obj = {'nova_object.name': self.objname(),
                'nova_object.data': primitive}
         if self.what_changed():
-            obj['nova_object.changes'] = self.what_changed()
+            obj['nova_object.changes'] = list(self.what_changed())
         return obj
 
     def load(self, attrname):
