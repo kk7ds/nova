@@ -12,8 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import collections
 import datetime
 import gettext
+import iso8601
 import netaddr
 
 gettext.install('nova')
@@ -25,7 +27,7 @@ from nova.object import instance
 from nova.object import migration
 from nova.openstack.common import timeutils
 from nova import test
-
+from nova.tests.api.openstack import fakes
 
 class MyObj(base.NovaObject):
     version = '1.5'
@@ -43,6 +45,10 @@ class MyObj(base.NovaObject):
         obj.bar = 'bar'
         obj.reset_changes()
         return obj
+
+    @base.magic
+    def marco(self, context):
+        return 'polo'
 
 
 class TestMetaclass(test.TestCase):
@@ -72,9 +78,17 @@ class TestMetaclass(test.TestCase):
         self.assertEqual(expected, Test2._obj_classes)
 
 
-class TestObject(test.TestCase):
-    #def setUp(self):
-    #    base.are_things_remote = False
+class _ObjectTest(test.TestCase):
+    def setUp(self):
+        super(_ObjectTest, self).setUp()
+        # Just in case
+        base.are_things_remote = False
+
+class TestObject(_ObjectTest):
+    def setUp(self):
+        super(TestObject, self).setUp()
+        # Just to be sure
+        base.are_things_remote = False
 
     def test_hydration_type_error(self):
         primitive = {'nova_object.name': 'MyObj',
@@ -137,14 +151,16 @@ class TestObject(test.TestCase):
         mig2.reset_changes()
         self.assertEqual(mig2.what_changed(), set())
 
+class _RemoteTest(_ObjectTest):
     def _testable_conductor(self):
-        conductor_service = self.start_service(
+        self.conductor_service = self.start_service(
             'conductor', manager='nova.conductor.manager.ConductorManager')
+        self.remote_object_calls = list()
 
         orig_object_class_action = \
-            conductor_service.manager.object_class_action
+            self.conductor_service.manager.object_class_action
         orig_object_action = \
-            conductor_service.manager.object_action
+            self.conductor_service.manager.object_action
 
         def fake_object_class_action(*args, **kwargs):
             # Temporarily go non-remote so the conductor handles
@@ -152,8 +168,10 @@ class TestObject(test.TestCase):
             base.are_things_remote = False
             result = orig_object_class_action(*args, **kwargs)
             base.are_things_remote = True
+            self.remote_object_calls.append((kwargs.get('objname'),
+                                             kwargs.get('objmethod')))
             return result
-        self.stubs.Set(conductor_service.manager, 'object_class_action',
+        self.stubs.Set(self.conductor_service.manager, 'object_class_action',
                        fake_object_class_action)
 
         def fake_object_action(*args, **kwargs):
@@ -162,17 +180,18 @@ class TestObject(test.TestCase):
             base.are_things_remote = False
             result = orig_object_action(*args, **kwargs)
             base.are_things_remote = True
+            self.remote_object_calls.append((kwargs.get('objinst'),
+                                             kwargs.get('objmethod')))
             return result
+        self.stubs.Set(self.conductor_service.manager, 'object_action',
+                       fake_object_action)
 
         # Things are remoted by default in this session
         base.are_things_remote = True
 
-    def test_base_remote(self):
+    def setUp(self):
+        super(_RemoteTest, self).setUp()
         self._testable_conductor()
-        ctxt = context.get_admin_context()
-        obj = MyObj.get(ctxt)
-        self.assertEqual(obj.bar, 'bar')
-        # FIXME: verify that it was actually done remotely
 
     def _prepare_for_version_permutation(self):
         class MyObj2(MyObj):
@@ -184,8 +203,18 @@ class TestObject(test.TestCase):
         # registry
         MyObj2.objname = classmethod(lambda c: 'MyObj')
 
-        self._testable_conductor()
         return MyObj2
+
+
+class TestRemoteObject(_RemoteTest):
+    def test_base_remote_static(self):
+        ctxt = context.get_admin_context()
+        obj = MyObj.get(ctxt)
+        self.assertEqual(obj.bar, 'bar')
+        self.assertEqual(self.remote_object_calls, [('MyObj', 'get')])
+        result = obj.marco(ctxt)
+        self.assertEqual(result, 'polo')
+        self.assertEqual(self.remote_object_calls[1][1], 'marco')
 
     def test_remote_major_version_mismatch(self):
         ctxt = context.get_admin_context()
@@ -207,7 +236,7 @@ class TestObject(test.TestCase):
         self.assertEqual(obj.bar, 'bar')
 
 
-class TestMigrationObject(test.TestCase):
+class TestMigrationObject(_ObjectTest):
     def test_hydration(self):
         mig = migration.Migration()
         mig.id = 123
@@ -246,48 +275,44 @@ class TestMigrationObject(test.TestCase):
         mig = migration.Migration.get(ctxt, migration_id=123)
         self.assertEqual(mig.id, 123)
 
+
+class TestRemoteMigrationObject(_RemoteTest):
     def test_get_remote(self):
-        base.are_things_remote = True
-
         ctxt = context.get_admin_context()
-        mig = migration.Migration()
-        mig.id = 123
-        mig.source_compute = 'foo'
-        mig.dest_compute = 'bar'
-        mig.source_node = 'foonode'
-        mig.dest_node = 'barnode'
-        mig.dest_host = 'baz'
-        mig.old_instance_type_id = 1
-        mig.new_instance_type_id = 2
-        mig.instance_uuid = 'fake-uuid'
-        mig.status = 'some status...'
 
-        conductor_service = self.start_service(
-            'conductor', manager='nova.conductor.manager.ConductorManager')
+        fake_migration = {
+            'id': 123,
+            'source_compute': 'foo',
+            'dest_compute': 'bar',
+            'source_node': 'foonode',
+            'dest_node': 'barnode',
+            'dest_host': 'baz',
+            'old_instance_type_id': 1,
+            'new_instance_type_id': 2,
+            'instance_uuid': 'fake-uuid',
+            'status': 'some status...',
+            }
 
-        self.mox.StubOutWithMock(conductor_service.manager,
-                                 'object_class_action')
-        self.mox.StubOutWithMock(conductor_service.manager,
-                                 'object_action')
+        self.mox.StubOutWithMock(db, 'migration_get')
+        self.mox.StubOutWithMock(db, 'migration_update')
 
-        conductor_service.manager.object_class_action(
-            ctxt, objname='Migration', objmethod='get', objver='1.0',
-            migration_id=123).AndReturn(mig)
-
-        conductor_service.manager.object_action(
-            ctxt, objinst=mig.to_primitive(), objmethod='save',
-            objver='1.0').AndReturn(None)
+        db.migration_get(ctxt, 123).AndReturn(fake_migration)
+        db.migration_update(ctxt, 123, {'status': 'foo'})
 
         self.mox.ReplayAll()
 
         rmig = migration.Migration.get(ctxt, migration_id=123)
-        self.assertEqual(rmig.id, mig.id)
-        self.assertEqual(rmig.source_node, mig.source_node)
-
+        self.assertEqual(rmig.id, fake_migration['id'])
+        self.assertEqual(rmig.source_node, fake_migration['source_node'])
+        rmig.status = 'foo'
         rmig.save(ctxt)
 
 
-class TestInstanceObject(test.TestCase):
+class TestInstanceObject(_ObjectTest):
+    def setUp(self):
+        super(TestInstanceObject, self).setUp()
+        self.fake_instance = fakes.stub_instance(1)
+
     def test_datetime_hydration(self):
         red_letter_date = timeutils.parse_isotime(
             timeutils.isotime(datetime.datetime(1955, 11, 5)))
@@ -325,3 +350,48 @@ class TestInstanceObject(test.TestCase):
         self.assertTrue(isinstance(inst2.access_ip_v6, netaddr.IPAddress))
         self.assertEqual(inst2.access_ip_v4, netaddr.IPAddress('1.2.3.4'))
         self.assertEqual(inst2.access_ip_v6, netaddr.IPAddress('::1'))
+
+    def test_get_without_expected(self):
+        ctxt = context.get_admin_context()
+        self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
+        db.instance_get_by_uuid(ctxt, 'uuid', []).AndReturn(self.fake_instance)
+        self.mox.ReplayAll()
+        inst = instance.Instance.get(ctxt, instance_uuid='uuid')
+        # Make sure these weren't loaded
+        self.assertFalse(hasattr(inst, '_metadata'))
+        self.assertFalse(hasattr(inst, '_system_metadata'))
+
+    def test_get_with_expected(self):
+        ctxt = context.get_admin_context()
+        self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
+        db.instance_get_by_uuid(
+            ctxt, 'uuid',
+            ['metadata', 'system_metadata']).AndReturn(self.fake_instance)
+        self.mox.ReplayAll()
+        inst = instance.Instance.get(ctxt, instance_uuid='uuid',
+                                     expected_attrs=['metadata',
+                                                     'system_metadata'])
+        self.assertTrue(hasattr(inst, '_metadata'))
+        self.assertTrue(hasattr(inst, '_system_metadata'))
+
+
+class TestRemoteInstanceObject(_RemoteTest):
+    def test_get_remote(self):
+        fake_instance = fakes.stub_instance(id=2,
+                                            access_ipv4='1.2.3.4',
+                                            access_ipv6='::1')
+        # isotime doesn't have microseconds and is always UTC
+        fake_instance['launched_at'] = (
+            fake_instance['launched_at'].replace(tzinfo=iso8601.iso8601.Utc(),
+                                                 microsecond=0))
+        ctxt = context.get_admin_context()
+        self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
+        db.instance_get_by_uuid(ctxt, 'fake-uuid', []).AndReturn(fake_instance)
+        self.mox.ReplayAll()
+        inst = instance.Instance.get(ctxt, instance_uuid='fake-uuid')
+        self.assertEqual(inst.id, fake_instance['id'])
+        print repr(inst.launched_at)
+        print repr(fake_instance['launched_at'])
+        self.assertEqual(inst.launched_at, fake_instance['launched_at'])
+        self.assertEqual(str(inst.access_ip_v4), fake_instance['access_ip_v4'])
+        self.assertEqual(str(inst.access_ip_v6), fake_instance['access_ip_v6'])

@@ -21,11 +21,26 @@ from nova.object import base
 from nova.openstack.common import timeutils
 from nova import utils
 
-def is_datetime(dt):
-    if not isinstance(dt, datetime.datetime):
-        print "Got: %s" % dt
-        raise ValueError('A datetime.datetime is required here')
-    return dt
+def datetime_or_none(dt):
+    if dt is None or isinstance(dt, datetime.datetime):
+        return dt
+    raise ValueError('A datetime.datetime is required here')
+
+def int_or_none(val):
+    if val is None:
+        return val
+    else:
+        return int(val)
+
+def ip_or_none(version):
+
+    def validator(val, version=version):
+        if val is None:
+            return val
+        else:
+            return netaddr.IPAddress(val, version=version)
+
+    return validator
 
 class Instance(base.NovaObject):
     fields = {
@@ -43,7 +58,7 @@ class Instance(base.NovaObject):
         'key_name': str,
         'key_data': str,
 
-        'power_state': int,
+        'power_state': int_or_none,
         'vm_state': str,
         'task_state': str,
 
@@ -61,9 +76,9 @@ class Instance(base.NovaObject):
 
         'reservation_id': str,
 
-        'scheduled_at': is_datetime,
-        'launched_at': is_datetime,
-        'terminated_at': is_datetime,
+        'scheduled_at': datetime_or_none,
+        'launched_at': datetime_or_none,
+        'terminated_at': datetime_or_none,
 
         'availability_zone': str,
 
@@ -83,8 +98,8 @@ class Instance(base.NovaObject):
         'default_swap_device': str,
         'config_drive': str,
 
-        'access_ip_v4': lambda x: netaddr.IPAddress(x, version=4),
-        'access_ip_v6': lambda x: netaddr.IPAddress(x, version=6),
+        'access_ip_v4': ip_or_none(4),
+        'access_ip_v6': ip_or_none(6),
 
         'auto_disk_config': bool,
         'progress': int,
