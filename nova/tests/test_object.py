@@ -28,12 +28,21 @@ from nova import test
 
 
 class MyObj(base.NovaObject):
+    version = '1.5'
     fields = {'foo': int,
               'bar': str,
               }
 
     def load(self, attrname):
         setattr(self, attrname, 'loaded!')
+
+    @base.magic_static
+    def get(cls, context):
+        obj = cls()
+        obj.foo = 1
+        obj.bar = 'bar'
+        obj.reset_changes()
+        return obj
 
 
 class TestMetaclass(test.TestCase):
@@ -64,6 +73,9 @@ class TestMetaclass(test.TestCase):
 
 
 class TestObject(test.TestCase):
+    #def setUp(self):
+    #    base.are_things_remote = False
+
     def test_hydration_type_error(self):
         primitive = {'nova_object.name': 'MyObj',
                      'nova_object.data': {'foo': 'a'}}
@@ -124,6 +136,75 @@ class TestObject(test.TestCase):
         self.assertEqual(mig2.what_changed(), set(['id']))
         mig2.reset_changes()
         self.assertEqual(mig2.what_changed(), set())
+
+    def _testable_conductor(self):
+        conductor_service = self.start_service(
+            'conductor', manager='nova.conductor.manager.ConductorManager')
+
+        orig_object_class_action = \
+            conductor_service.manager.object_class_action
+        orig_object_action = \
+            conductor_service.manager.object_action
+
+        def fake_object_class_action(*args, **kwargs):
+            # Temporarily go non-remote so the conductor handles
+            # this request directly
+            base.are_things_remote = False
+            result = orig_object_class_action(*args, **kwargs)
+            base.are_things_remote = True
+            return result
+        self.stubs.Set(conductor_service.manager, 'object_class_action',
+                       fake_object_class_action)
+
+        def fake_object_action(*args, **kwargs):
+            # Temporarily go non-remote so the conductor handles
+            # this request directly
+            base.are_things_remote = False
+            result = orig_object_action(*args, **kwargs)
+            base.are_things_remote = True
+            return result
+
+        # Things are remoted by default in this session
+        base.are_things_remote = True
+
+    def test_base_remote(self):
+        self._testable_conductor()
+        ctxt = context.get_admin_context()
+        obj = MyObj.get(ctxt)
+        self.assertEqual(obj.bar, 'bar')
+        # FIXME: verify that it was actually done remotely
+
+    def _prepare_for_version_permutation(self):
+        class MyObj2(MyObj):
+            pass
+
+        # _After_ we're registered, start evilishly returning our name as
+        # that of another object so that the client will claim to instantiate
+        # MyObj with our version, which won't actually match what is in the
+        # registry
+        MyObj2.objname = classmethod(lambda c: 'MyObj')
+
+        self._testable_conductor()
+        return MyObj2
+
+    def test_remote_major_version_mismatch(self):
+        ctxt = context.get_admin_context()
+        MyObj = self._prepare_for_version_permutation()
+        MyObj.version = '2.0'
+        self.assertRaises(base.IncompatibleObjectMajorVersion, MyObj.get, ctxt)
+
+    def test_remote_minor_version_greater(self):
+        ctxt = context.get_admin_context()
+        MyObj = self._prepare_for_version_permutation()
+        MyObj.version = '1.6'
+        self.assertRaises(base.IncompatibleObjectMinorVersion, MyObj.get, ctxt)
+
+    def test_remote_minor_version_less(self):
+        ctxt = context.get_admin_context()
+        MyObj = self._prepare_for_version_permutation()
+        MyObj.version = '1.2'
+        obj = MyObj.get(ctxt)
+        self.assertEqual(obj.bar, 'bar')
 
 
 class TestMigrationObject(test.TestCase):
@@ -190,11 +271,12 @@ class TestMigrationObject(test.TestCase):
                                  'object_action')
 
         conductor_service.manager.object_class_action(
-            ctxt, objname='Migration', objmethod='get',
+            ctxt, objname='Migration', objmethod='get', objver='1.0',
             migration_id=123).AndReturn(mig)
 
         conductor_service.manager.object_action(
-            ctxt, objinst=mig.to_primitive(), objmethod='save').AndReturn(None)
+            ctxt, objinst=mig.to_primitive(), objmethod='save',
+            objver='1.0').AndReturn(None)
 
         self.mox.ReplayAll()
 

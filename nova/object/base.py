@@ -14,6 +14,7 @@
 
 """Nova common internal object model"""
 
+from nova import exception
 import nova.openstack.common.rpc.proxy
 
 
@@ -68,7 +69,7 @@ def magic_static(fn):
             rpc = NovaObjProxy()
             return rpc.object_class_action(context,
                                            cls.objname(), fn.__name__,
-                                           kwargs)
+                                           cls.version, kwargs)
         else:
             return fn(cls, context, **kwargs)
     return classmethod(wrapper)
@@ -79,14 +80,57 @@ def magic(fn):
             # Pretend this is a thing
             rpc = NovaObjProxy()
             return rpc.object_action(context,
-                                     self, fn.__name__, kwargs)
+                                     self, fn.__name__,
+                                     self.version, kwargs)
         else:
             return fn(self, context, **kwargs)
     return wrapper
 
 
+class IncompatibleObjectVersion(exception.NovaException):
+    pass
+
+
+class IncompatibleObjectMajorVersion(IncompatibleObjectVersion):
+    _message = _('Incompatible major version (%(client) != %(server))')
+
+
+class IncompatibleObjectMinorVersion(IncompatibleObjectVersion):
+    _message = _('Incompatible minor version (%(client) > %(server))')
+
+
+# Object versioning rules
+#
+# Each service has its set of objects, each with a version attached. When
+# a client attempts to call an object method, the server checks to see if
+# the version of that object matches (in a compatible way) its object
+# implementation. If so, cool, and if not, fail.
+#
+# FIXME: The server could provide compatibility with older major versions of
+#        the object, but punt on that for now.
+# FIXME: The RpcDispatcher should check the version of incoming objects that
+#        are provided as arguments and make sure that they're compabible with
+#        the local version of the object.
+def check_object_version(server, client):
+    try:
+        client_major, _client_minor = client.split('.')
+        server_major, _server_minor = server.split('.')
+        client_minor = int(_client_minor)
+        server_minor = int(_server_minor)
+    except Exception:
+        raise Exception('Invalid version string')
+
+    if client_major != server_major:
+        raise IncompatibleObjectMajorVersion(dict(client=client_major,
+                                                  server=server_major))
+    if client_minor > server_minor:
+        raise IncompatibleObjectMinorVersion(dict(client=client_minor,
+                                                  server=server_minor))
+
+
 class NovaObject(object):
     __metaclass__ = NovaObjectMetaclass
+    version = '1.0'
     fields = {}
 
     def __init__(self):
@@ -110,10 +154,11 @@ class NovaObject(object):
         return value
 
     @classmethod
-    def from_primitive(cls, primitive):
+    def from_primitive(cls, primitive, version='1.0'):
         """Simple base-case hydration"""
         objname = primitive['nova_object.name']
         objclass = cls._obj_classes[objname]
+        check_object_version(objclass.version, version)
         self = objclass()
         data = primitive['nova_object.data']
         for name in self.fields:
@@ -211,12 +256,12 @@ class NovaObjProxy(nova.openstack.common.rpc.proxy.RpcProxy):
         else:
             return result
 
-    def object_class_action(self, context, objname, objmethod, kwargs):
+    def object_class_action(self, context, objname, objmethod, objver, kwargs):
         msg = self.make_msg('object_class_action', objname=objname,
-                            objmethod=objmethod, **kwargs)
+                            objmethod=objmethod, objver=objver, **kwargs)
         return self.call(context, msg)
 
-    def object_action(self, context, objinst, objmethod, kwargs):
+    def object_action(self, context, objinst, objmethod, objver, kwargs):
         msg = self.make_msg('object_action', objinst=objinst.to_primitive(),
-                            objmethod=objmethod, **kwargs)
+                            objmethod=objmethod, objver=objver, **kwargs)
         return self.call(context, msg)

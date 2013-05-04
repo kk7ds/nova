@@ -445,8 +445,10 @@ class ConductorManager(manager.Manager):
     # TOTAL HACK
     # Just using conductor's regular method API as an easy spot to
     # house this for the moment
-    def object_class_action(self, context, objname, objmethod, **kwargs):
+    def object_class_action(self, context, objname, objmethod,
+                            objver, **kwargs):
         objclass = nova_object.NovaObject.class_from_name(objname)
+        nova_object.check_object_version(objclass.version, objver)
         result = getattr(objclass, objmethod)(context, **kwargs)
 
         # FIXME: Conductor doesn't use a modified RpcProxy right now,
@@ -455,7 +457,8 @@ class ConductorManager(manager.Manager):
             result = result.to_primitive()
         return result
 
-    def object_action(self, context, objinst, objmethod, **kwargs):
+    def object_action(self, context, objinst, objmethod, objver,
+                      **kwargs):
         # FIXME: Conductor doesn't use a modified RpcProxy right now,
         # so we need to do this manually
         objinst = nova_object.NovaObject.from_primitive(objinst)
