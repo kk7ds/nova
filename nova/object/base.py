@@ -103,6 +103,12 @@ class NovaObject(object):
     def class_from_name(cls, objname):
         return cls._obj_classes[objname]
 
+    def _attr_from_primitive(self, attribute, value):
+        handler = '_attr_%s_from_primitive' % attribute
+        if hasattr(self, handler):
+            return getattr(self, handler)(value)
+        return value
+
     @classmethod
     def from_primitive(cls, primitive):
         """Simple base-case hydration"""
@@ -112,17 +118,25 @@ class NovaObject(object):
         data = primitive['nova_object.data']
         for name in self.fields:
             if name in data:
-                setattr(self, name, data[name])
+                setattr(self, name,
+                        self._attr_from_primitive(name, data[name]))
         changes = primitive.get('nova_object.changes', [])
         self._changed_fields = set([x for x in changes if x in self.fields])
         return self
+
+    def _attr_to_primitive(self, attribute):
+        handler = '_attr_%s_to_primitive' % attribute
+        if hasattr(self, handler):
+            return getattr(self, handler)()
+        else:
+            return getattr(self, attribute)
 
     def to_primitive(self):
         """Simple base-case dehydration"""
         primitive = dict()
         for name in self.fields:
             if hasattr(self, get_attrname(name)):
-                primitive[name] = getattr(self, name)
+                primitive[name] = self._attr_to_primitive(name)
         obj = {'nova_object.name': self.objname(),
                'nova_object.data': primitive}
         if self.what_changed():
