@@ -12,14 +12,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import datetime
 import gettext
+import netaddr
 
 gettext.install('nova')
 
 from nova import context
 from nova import db
 from nova.object import base
+from nova.object import instance
 from nova.object import migration
+from nova.openstack.common import timeutils
 from nova import test
 
 
@@ -199,3 +203,43 @@ class TestMigrationObject(test.TestCase):
         self.assertEqual(rmig.source_node, mig.source_node)
 
         rmig.save(ctxt)
+
+
+class TestInstanceObject(test.TestCase):
+    def test_datetime_hydration(self):
+        red_letter_date = timeutils.parse_isotime(
+            timeutils.isotime(datetime.datetime(1955, 11, 5)))
+        inst = instance.Instance()
+        inst.uuid = 'fake-uuid'
+        inst.launched_at = red_letter_date
+        primitive = inst.to_primitive()
+        expected = {'nova_object.name': 'Instance',
+                    'nova_object.data':
+                        {'uuid': 'fake-uuid',
+                         'launched_at': '1955-11-05T00:00:00Z'},
+                    'nova_object.changes': ['uuid', 'launched_at']}
+        self.assertEqual(primitive, expected)
+        inst2 = instance.Instance.from_primitive(primitive)
+        self.assertTrue(isinstance(inst2.launched_at,
+                        datetime.datetime))
+        self.assertEqual(inst2.launched_at, red_letter_date)
+
+    def test_ip_hydration(self):
+        inst = instance.Instance()
+        inst.uuid = 'fake-uuid'
+        inst.access_ip_v4 = '1.2.3.4'
+        inst.access_ip_v6 = '::1'
+        primitive = inst.to_primitive()
+        expected = {'nova_object.name': 'Instance',
+                    'nova_object.data':
+                        {'uuid': 'fake-uuid',
+                         'access_ip_v4': '1.2.3.4',
+                         'access_ip_v6': '::1'},
+                    'nova_object.changes': ['uuid', 'access_ip_v6',
+                                            'access_ip_v4']}
+        self.assertEqual(primitive, expected)
+        inst2 = instance.Instance.from_primitive(primitive)
+        self.assertTrue(isinstance(inst2.access_ip_v4, netaddr.IPAddress))
+        self.assertTrue(isinstance(inst2.access_ip_v6, netaddr.IPAddress))
+        self.assertEqual(inst2.access_ip_v4, netaddr.IPAddress('1.2.3.4'))
+        self.assertEqual(inst2.access_ip_v6, netaddr.IPAddress('::1'))
