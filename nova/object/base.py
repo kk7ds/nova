@@ -16,6 +16,7 @@
 
 from nova import exception
 import nova.openstack.common.rpc.proxy
+import nova.openstack.common.rpc.dispatcher
 
 
 def get_attrname(name):
@@ -238,23 +239,10 @@ class NovaObjProxy(nova.openstack.common.rpc.proxy.RpcProxy):
         super(NovaObjProxy, self).__init__(topic='conductor',
                                            default_version='1.0')
 
-    @staticmethod
-    def make_namespaced_msg(method, namespace, **kwargs):
-        s_kwargs = {}
-        for key, value in kwargs.iteritems():
-            if isinstance(value, NovaObject):
-                value = value.to_primitive()
-            s_kwargs[key] = value
-        return nova.openstack.common.rpc.proxy.RpcProxy.make_namespaced_msg(
-            method, namespace, **s_kwargs)
-
-    def call(self, context, msg, topic=None, version=None, timeout=None):
-        result = super(NovaObjProxy, self).call(context, msg, topic, version,
-                                                timeout)
+    def _deserialize_result(self, result):
         if isinstance(result, dict) and 'nova_object.name' in result:
-            return NovaObject.from_primitive(result)
-        else:
-            return result
+            result = NovaObject.from_primitive(result)
+        return result
 
     def object_class_action(self, context, objname, objmethod, objver, kwargs):
         msg = self.make_msg('object_class_action', objname=objname,
@@ -265,3 +253,9 @@ class NovaObjProxy(nova.openstack.common.rpc.proxy.RpcProxy):
         msg = self.make_msg('object_action', objinst=objinst.to_primitive(),
                             objmethod=objmethod, objver=objver, **kwargs)
         return self.call(context, msg)
+
+class NovaObjDispatcher(nova.openstack.common.rpc.dispatcher.RpcDispatcher):
+    def _deserialize_args(self, kwargs):
+        for argname, arg in kwargs.items():
+            if isinstance(arg, dict) and 'nova_object.name' in arg:
+                kwargs[argname] = NovaObject.from_primitive(arg)

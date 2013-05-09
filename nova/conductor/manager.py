@@ -449,17 +449,8 @@ class ConductorManager(manager.Manager):
                             objver, **kwargs):
         objclass = nova_object.NovaObject.class_from_name(objname)
         nova_object.check_object_version(objclass.version, objver)
-        result = getattr(objclass, objmethod)(context, **kwargs)
-
-        # FIXME: Conductor doesn't use a modified RpcProxy right now,
-        # so we need to do this manually
-        if isinstance(result, nova_object.NovaObject):
-            result = result.to_primitive()
-        return result
+        return getattr(objclass, objmethod)(context, **kwargs)
 
     def object_action(self, context, objinst, objmethod, objver,
                       **kwargs):
-        # FIXME: Conductor doesn't use a modified RpcProxy right now,
-        # so we need to do this manually
-        objinst = nova_object.NovaObject.from_primitive(objinst)
         return getattr(objinst, objmethod)(context, **kwargs)

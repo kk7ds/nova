@@ -57,10 +57,10 @@ from oslo.config import cfg
 
 from nova import baserpc
 from nova.db import base
+from nova.object import base as object_base
 from nova.openstack.common import log as logging
 from nova.openstack.common import periodic_task
 from nova.openstack.common.plugin import pluginmanager
-from nova.openstack.common.rpc import dispatcher as rpc_dispatcher
 from nova.scheduler import rpcapi as scheduler_rpcapi
 
 
@@ -93,7 +93,7 @@ class Manager(base.Base, periodic_task.PeriodicTasks):
         one class as the target of rpc messages, override this method.
         '''
         base_rpc = baserpc.BaseRPCAPI(self.service_name, backdoor_port)
-        return rpc_dispatcher.RpcDispatcher([self, base_rpc])
+        return object_base.NovaObjDispatcher([self, base_rpc])
 
     def periodic_tasks(self, context, raise_on_error=False):
         """Tasks to be run at a periodic interval."""
