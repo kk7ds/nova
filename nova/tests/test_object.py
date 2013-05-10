@@ -20,6 +20,7 @@ import netaddr
 
 gettext.install('nova')
 
+from nova.conductor import rpcapi as conductor_rpcapi
 from nova import context
 from nova import db
 from nova.object import base
@@ -185,7 +186,7 @@ class _RemoteTest(_ObjectTest):
                        fake_object_action)
 
         # Things are remoted by default in this session
-        base.NovaObject.indirection_api = base.NovaObjProxy()
+        base.NovaObject.indirection_api = conductor_rpcapi.ConductorAPI()
 
     def setUp(self):
         super(_RemoteTest, self).setUp()

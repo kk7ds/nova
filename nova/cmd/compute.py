@@ -25,8 +25,10 @@ import traceback
 from oslo.config import cfg
 
 from nova import config
+from nova.conductor import rpcapi as conductor_rpcapi
 import nova.db.api
 from nova import exception
+from nova.object import object_base
 from nova.openstack.common import log as logging
 from nova import service
 from nova import utils
@@ -57,6 +59,8 @@ def main():
 
     if not CONF.conductor.use_local:
         block_db_access()
+        object_base.NovaObject.indirection_api = \
+            conductor_rpcapi.ConductorAPI()
 
     server = service.Service.create(binary='nova-compute',
                                     topic=CONF.compute_topic,

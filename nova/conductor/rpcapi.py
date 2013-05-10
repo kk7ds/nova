@@ -16,13 +16,13 @@
 
 from oslo.config import cfg
 
+from nova.object import base as object_base
 from nova.openstack.common import jsonutils
-import nova.openstack.common.rpc.proxy
 
 CONF = cfg.CONF
 
 
-class ConductorAPI(nova.openstack.common.rpc.proxy.RpcProxy):
+class ConductorAPI(object_base.NovaObjProxy):
     """Client side of the conductor RPC API
 
     API version history:
@@ -449,3 +449,14 @@ class ConductorAPI(nova.openstack.common.rpc.proxy.RpcProxy):
         instance_p = jsonutils.to_primitive(instance)
         msg = self.make_msg('compute_unrescue', instance=instance_p)
         return self.call(context, msg, version='1.48')
+
+    # FIXME(danms): RPC API version crap!
+    def object_class_action(self, context, objname, objmethod, objver, kwargs):
+        msg = self.make_msg('object_class_action', objname=objname,
+                            objmethod=objmethod, objver=objver, **kwargs)
+        return self.call(context, msg)
+
+    def object_action(self, context, objinst, objmethod, objver, kwargs):
+        msg = self.make_msg('object_action', objinst=objinst.to_primitive(),
+                            objmethod=objmethod, objver=objver, **kwargs)
+        return self.call(context, msg)

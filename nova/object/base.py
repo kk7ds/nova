@@ -218,38 +218,25 @@ class NovaObject(object):
         setattr(self, name, value)
 
 
-# Hacky thing to use conductor for the moment
-# This could, of course, be in conductor's RPCAPI, but I think that
-# long-term, we will want conductor to expose another namespace'd API object
-# that will provide just these object operations.
 class NovaObjProxy(nova.openstack.common.rpc.proxy.RpcProxy):
     """A NovaObject-aware RpcProxy.
 
-    This simply provides encapsulation of the Nova-specific magic object
-    serialization and deserialization work. This could be moved back to
-    Oslo someday if desired.
+    This simply provides the Nova-specific object deserialization
+    magic. This could be moved back to Oslo someday if desired.
     """
-
-    def __init__(self):
-        super(NovaObjProxy, self).__init__(topic='conductor',
-                                           default_version='1.0')
 
     def _deserialize_result(self, result):
         if isinstance(result, dict) and 'nova_object.name' in result:
             result = NovaObject.from_primitive(result)
         return result
 
-    def object_class_action(self, context, objname, objmethod, objver, kwargs):
-        msg = self.make_msg('object_class_action', objname=objname,
-                            objmethod=objmethod, objver=objver, **kwargs)
-        return self.call(context, msg)
-
-    def object_action(self, context, objinst, objmethod, objver, kwargs):
-        msg = self.make_msg('object_action', objinst=objinst.to_primitive(),
-                            objmethod=objmethod, objver=objver, **kwargs)
-        return self.call(context, msg)
-
 class NovaObjDispatcher(nova.openstack.common.rpc.dispatcher.RpcDispatcher):
+    """A NovaObject-aware RpcDispatcher
+
+    This simply provides the Nova-specific object deserialization
+    magic. This could be moved back to Oslo someday if desired.
+    """
+
     def _deserialize_args(self, kwargs):
         for argname, arg in kwargs.items():
             if isinstance(arg, dict) and 'nova_object.name' in arg:

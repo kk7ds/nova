@@ -21,9 +21,10 @@ Client side of the compute RPC API.
 from oslo.config import cfg
 
 from nova import exception
+from nova.object import base as object_base
 from nova.openstack.common import jsonutils
 from nova.openstack.common import rpc
-import nova.openstack.common.rpc.proxy
+import nova.openstack.common.rpc
 
 rpcapi_opts = [
     cfg.StrOpt('compute_topic',
@@ -56,7 +57,7 @@ def _compute_topic(topic, ctxt, host, instance):
     return rpc.queue_get_for(ctxt, topic, host)
 
 
-class ComputeAPI(nova.openstack.common.rpc.proxy.RpcProxy):
+class ComputeAPI(object_base.NovaObjProxy):
     '''Client side of the compute rpc API.
 
     API version history:
