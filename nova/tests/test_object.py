@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import collections
+import contextlib
 import datetime
 import gettext
 import iso8601
@@ -82,14 +82,9 @@ class _ObjectTest(test.TestCase):
     def setUp(self):
         super(_ObjectTest, self).setUp()
         # Just in case
-        base.are_things_remote = False
+        base.NovaObject.indirection_api = None
 
 class TestObject(_ObjectTest):
-    def setUp(self):
-        super(TestObject, self).setUp()
-        # Just to be sure
-        base.are_things_remote = False
-
     def test_hydration_type_error(self):
         primitive = {'nova_object.name': 'MyObj',
                      'nova_object.data': {'foo': 'a'}}
@@ -151,6 +146,15 @@ class TestObject(_ObjectTest):
         mig2.reset_changes()
         self.assertEqual(mig2.what_changed(), set())
 
+@contextlib.contextmanager
+def things_temporarily_local():
+    # Temporarily go non-remote so the conductor handles
+    # this request directly
+    _api = base.NovaObject.indirection_api
+    base.NovaObject.indirection_api = None
+    yield
+    base.NovaObject.indirection_api = _api
+
 class _RemoteTest(_ObjectTest):
     def _testable_conductor(self):
         self.conductor_service = self.start_service(
@@ -163,11 +167,8 @@ class _RemoteTest(_ObjectTest):
             self.conductor_service.manager.object_action
 
         def fake_object_class_action(*args, **kwargs):
-            # Temporarily go non-remote so the conductor handles
-            # this request directly
-            base.are_things_remote = False
-            result = orig_object_class_action(*args, **kwargs)
-            base.are_things_remote = True
+            with things_temporarily_local():
+                result = orig_object_class_action(*args, **kwargs)
             self.remote_object_calls.append((kwargs.get('objname'),
                                              kwargs.get('objmethod')))
             return result
@@ -175,11 +176,8 @@ class _RemoteTest(_ObjectTest):
                        fake_object_class_action)
 
         def fake_object_action(*args, **kwargs):
-            # Temporarily go non-remote so the conductor handles
-            # this request directly
-            base.are_things_remote = False
-            result = orig_object_action(*args, **kwargs)
-            base.are_things_remote = True
+            with things_temporarily_local():
+                result = orig_object_action(*args, **kwargs)
             self.remote_object_calls.append((kwargs.get('objinst'),
                                              kwargs.get('objmethod')))
             return result
@@ -187,7 +185,7 @@ class _RemoteTest(_ObjectTest):
                        fake_object_action)
 
         # Things are remoted by default in this session
-        base.are_things_remote = True
+        base.NovaObject.indirection_api = base.NovaObjProxy()
 
     def setUp(self):
         super(_RemoteTest, self).setUp()
@@ -256,7 +254,7 @@ class TestMigrationObject(_ObjectTest):
                          dict(mig2.iteritems()))
 
     def test_get(self):
-        base.are_things_remote = False
+        base.NovaObject.are_things_remote = False
         ctxt = None
 
         def fake_get(context, migration_id):
@@ -390,8 +388,6 @@ class TestRemoteInstanceObject(_RemoteTest):
         self.mox.ReplayAll()
         inst = instance.Instance.get(ctxt, instance_uuid='fake-uuid')
         self.assertEqual(inst.id, fake_instance['id'])
-        print repr(inst.launched_at)
-        print repr(fake_instance['launched_at'])
         self.assertEqual(inst.launched_at, fake_instance['launched_at'])
         self.assertEqual(str(inst.access_ip_v4), fake_instance['access_ip_v4'])
         self.assertEqual(str(inst.access_ip_v6), fake_instance['access_ip_v6'])

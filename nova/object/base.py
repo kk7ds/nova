@@ -41,11 +41,12 @@ def make_class_properties(cls):
         setattr(cls, name, property(getter, setter))
 
 
-# Pretend this is a config variable
-are_things_remote = False
-
 class NovaObjectMetaclass(type):
     """Metaclass that allows tracking of object classes."""
+
+    # NOTE(danms): This is what controls whether object operations are
+    # remoted. If this is not None, use it to remote things over RPC.
+    indirection_api = None
 
     def __init__(cls, names, bases, dict_):
         if not hasattr(cls, '_obj_classes'):
@@ -65,24 +66,18 @@ class NovaObjectMetaclass(type):
 # implementation, or RPC indirection to it on some other service
 def magic_static(fn):
     def wrapper(cls, context, **kwargs):
-        if are_things_remote:
-            # hackity hack hack
-            rpc = NovaObjProxy()
-            return rpc.object_class_action(context,
-                                           cls.objname(), fn.__name__,
-                                           cls.version, kwargs)
+        if NovaObject.indirection_api:
+            return NovaObject.indirection_api.object_class_action(
+                context, cls.objname(), fn.__name__, cls.version, kwargs)
         else:
             return fn(cls, context, **kwargs)
     return classmethod(wrapper)
 
 def magic(fn):
     def wrapper(self, context, **kwargs):
-        if are_things_remote:
-            # Pretend this is a thing
-            rpc = NovaObjProxy()
-            return rpc.object_action(context,
-                                     self, fn.__name__,
-                                     self.version, kwargs)
+        if NovaObject.indirection_api:
+            return NovaObject.indirection_api.object_action(
+                context, self, fn.__name__, self.version, kwargs)
         else:
             return fn(self, context, **kwargs)
     return wrapper
