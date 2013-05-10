@@ -217,6 +217,9 @@ class NovaObject(object):
     def __setitem__(self, name, value):
         setattr(self, name, value)
 
+    def get(self, key, value=None):
+        return self[key]
+
 
 class NovaObjProxy(nova.openstack.common.rpc.proxy.RpcProxy):
     """A NovaObject-aware RpcProxy.

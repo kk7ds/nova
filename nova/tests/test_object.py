@@ -311,6 +311,9 @@ class TestInstanceObject(_ObjectTest):
     def setUp(self):
         super(TestInstanceObject, self).setUp()
         self.fake_instance = fakes.stub_instance(1)
+        self.fake_instance['deleted_at'] = None
+        self.fake_instance['created_at'] = None
+        self.fake_instance['updated_at'] = None
 
     def test_datetime_hydration(self):
         red_letter_date = timeutils.parse_isotime(
@@ -355,7 +358,7 @@ class TestInstanceObject(_ObjectTest):
         self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
         db.instance_get_by_uuid(ctxt, 'uuid', []).AndReturn(self.fake_instance)
         self.mox.ReplayAll()
-        inst = instance.Instance.get(ctxt, instance_uuid='uuid')
+        inst = instance.Instance.get_by_uuid(ctxt, uuid='uuid')
         # Make sure these weren't loaded
         self.assertFalse(hasattr(inst, '_metadata'))
         self.assertFalse(hasattr(inst, '_system_metadata'))
@@ -367,28 +370,36 @@ class TestInstanceObject(_ObjectTest):
             ctxt, 'uuid',
             ['metadata', 'system_metadata']).AndReturn(self.fake_instance)
         self.mox.ReplayAll()
-        inst = instance.Instance.get(ctxt, instance_uuid='uuid',
-                                     expected_attrs=['metadata',
-                                                     'system_metadata'])
+        inst = instance.Instance.get_by_uuid(
+            ctxt, uuid='uuid', expected_attrs=['metadata', 'system_metadata'])
         self.assertTrue(hasattr(inst, '_metadata'))
         self.assertTrue(hasattr(inst, '_system_metadata'))
 
 
 class TestRemoteInstanceObject(_RemoteTest):
+    def setUp(self):
+        super(TestRemoteInstanceObject, self).setUp()
+        self.fake_instance = fakes.stub_instance(id=2,
+                                                 access_ipv4='1.2.3.4',
+                                                 access_ipv6='::1')
+        self.fake_instance['deleted_at'] = None
+        self.fake_instance['created_at'] = None
+        self.fake_instance['updated_at'] = None
+        self.fake_instance['launched_at'] = (
+            self.fake_instance['launched_at'].replace(
+                tzinfo=iso8601.iso8601.Utc(), microsecond=0))
+
     def test_get_remote(self):
-        fake_instance = fakes.stub_instance(id=2,
-                                            access_ipv4='1.2.3.4',
-                                            access_ipv6='::1')
         # isotime doesn't have microseconds and is always UTC
-        fake_instance['launched_at'] = (
-            fake_instance['launched_at'].replace(tzinfo=iso8601.iso8601.Utc(),
-                                                 microsecond=0))
         ctxt = context.get_admin_context()
         self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
-        db.instance_get_by_uuid(ctxt, 'fake-uuid', []).AndReturn(fake_instance)
+        db.instance_get_by_uuid(ctxt, 'fake-uuid', []).AndReturn(
+            self.fake_instance)
         self.mox.ReplayAll()
-        inst = instance.Instance.get(ctxt, instance_uuid='fake-uuid')
-        self.assertEqual(inst.id, fake_instance['id'])
-        self.assertEqual(inst.launched_at, fake_instance['launched_at'])
-        self.assertEqual(str(inst.access_ip_v4), fake_instance['access_ip_v4'])
-        self.assertEqual(str(inst.access_ip_v6), fake_instance['access_ip_v6'])
+        inst = instance.Instance.get_by_uuid(ctxt, uuid='fake-uuid')
+        self.assertEqual(inst.id, self.fake_instance['id'])
+        self.assertEqual(inst.launched_at, self.fake_instance['launched_at'])
+        self.assertEqual(str(inst.access_ip_v4),
+                         self.fake_instance['access_ip_v4'])
+        self.assertEqual(str(inst.access_ip_v6),
+                         self.fake_instance['access_ip_v6'])
