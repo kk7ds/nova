@@ -36,7 +36,12 @@ def make_class_properties(cls):
 
         def setter(self, value, name=name, typefn=typefn):
             self._changed_fields.add(name)
-            return setattr(self, get_attrname(name), typefn(value))
+            try:
+                return setattr(self, get_attrname(name), typefn(value))
+            except Exception, e:
+                # This should probably be a log call, but print for now
+                print "Error setting %s.%s: %s" % (self.objname(), name, e)
+                raise
 
         setattr(cls, name, property(getter, setter))
 
