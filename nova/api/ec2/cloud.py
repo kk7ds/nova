@@ -43,7 +43,7 @@ from nova import exception
 from nova.image import s3
 from nova import network
 from nova.network.security_group import quantum_driver
-from nova.object import instance_obj
+from nova.object import instance as instance_obj
 from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
 from nova import quota
@@ -1339,13 +1339,18 @@ class CloudController(object):
             block_device_mapping=kwargs.get('block_device_mapping', {}))
         return self._format_run_instances(context, resv_id)
 
-    def _ec2_ids_to_instances(self, context, instance_id):
+    def _ec2_ids_to_instances(self, context, instance_id, objects=False):
         """Get all instances first, to prevent partial executions."""
         instances = []
+        extra = ['system_metadata', 'metadata']
         for ec2_id in instance_id:
             validate_ec2_id(ec2_id)
             instance_uuid = ec2utils.ec2_inst_id_to_uuid(context, ec2_id)
-            instance = self.compute_api.get(context, instance_uuid)
+            if objects:
+                instance = instance_obj.Instance.get_by_uuid(
+                    context, uuid=instance_uuid, expected_attrs=extra)
+            else:
+                instance = self.compute_api.get(context, instance_uuid)
             instances.append(instance)
         return instances
 
@@ -1371,29 +1376,19 @@ class CloudController(object):
     def stop_instances(self, context, instance_id, **kwargs):
         """Stop each instances in instance_id.
         Here instance_id is a list of instance ids"""
-        instances = self._ec2_ids_to_instances(context, instance_id)
+        instances = self._ec2_ids_to_instances(context, instance_id, True)
         LOG.debug(_("Going to stop instances"))
-        extra = ['system_metadata', 'metadata']
         for instance in instances:
-            # Temporary measure to get objects
-            inst_obj = instance_obj.Instance.get_by_uuid(context,
-                                                         uuid=instance['uuid'],
-                                                         expected_attrs=extra)
-            self.compute_api.stop(context, inst_obj)
+            self.compute_api.stop(context, instance)
         return True
 
     def start_instances(self, context, instance_id, **kwargs):
         """Start each instances in instance_id.
         Here instance_id is a list of instance ids"""
-        instances = self._ec2_ids_to_instances(context, instance_id)
+        instances = self._ec2_ids_to_instances(context, instance_id, True)
         LOG.debug(_("Going to start instances"))
-        extra = ['system_metadata', 'metadata']
         for instance in instances:
-            # Temporary measure to get objects
-            inst_obj = instance_obj.Instance.get_by_uuid(context,
-                                                         uuid=instance['uuid'],
-                                                         expected_attrs=extra)
-            self.compute_api.start(context, inst_obj)
+            self.compute_api.start(context, instance)
         return True
 
     def _get_image(self, context, ec2_id):
@@ -1643,7 +1638,11 @@ class CloudController(object):
 
             if vm_state == vm_states.ACTIVE:
                 restart_instance = True
-                self.compute_api.stop(context, instance)
+                # FIXME(danms): Temporary object conversion!
+                inst_obj = instance_obj.Instance.get_by_uuid(
+                    context, instance,
+                    expected_attrs=['system_metadata', 'metadata'])
+                self.compute_api.stop(context, inst_obj)
 
             # wait instance for really stopped
             start_time = time.time()
@@ -1685,7 +1684,10 @@ class CloudController(object):
         ec2_id = ec2utils.glance_id_to_ec2_id(context, new_image['id'])
 
         if restart_instance:
-            self.compute_api.start(context, instance)
+            # FIXME(danms): Temporary object conversion!
+            inst_obj = instance_obj.Instance._from_db_object(
+                instance, ['system_metadata', 'metadata'])
+            self.compute_api.start(context, inst_obj)
 
         return {'imageId': ec2_id}
 

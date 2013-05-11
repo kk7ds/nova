@@ -198,21 +198,14 @@ class Instance(base.NovaObject):
     def _attr_terminated_at_from_primitive(self, value):
         return timeutils.parse_isotime(value)
 
-    @base.magic_static
-    def get_by_uuid(cls, context, uuid=None, expected_attrs=None):
+    @classmethod
+    def _from_db_object(cls, db_inst, expected_attrs=None):
+        """Method to help with migration to objects.
+
+        Converts a database entity to a formal object.
+        """
         if expected_attrs is None:
             expected_attrs = []
-
-        # Construct DB-specific columns from generic expected_attrs
-        columns_to_join = []
-        if 'metadata' in expected_attrs:
-            columns_to_join.append('metadata')
-        if 'system_metadata' in expected_attrs:
-            columns_to_join.append('system_metadata')
-
-        db_inst = db.instance_get_by_uuid(context, uuid,
-                                          columns_to_join)
-
         instance = cls()
         # Most of the field names match right now, so be quick
         for field in cls.fields:
@@ -228,6 +221,22 @@ class Instance(base.NovaObject):
 
         instance.reset_changes()
         return instance
+
+    @base.magic_static
+    def get_by_uuid(cls, context, uuid=None, expected_attrs=None):
+        if expected_attrs is None:
+            expected_attrs = []
+
+        # Construct DB-specific columns from generic expected_attrs
+        columns_to_join = []
+        if 'metadata' in expected_attrs:
+            columns_to_join.append('metadata')
+        if 'system_metadata' in expected_attrs:
+            columns_to_join.append('system_metadata')
+
+        db_inst = db.instance_get_by_uuid(context, uuid,
+                                          columns_to_join)
+        return cls._from_db_object(db_inst, expected_attrs)
 
     @base.magic
     def save(self, context):
