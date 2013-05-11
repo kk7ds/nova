@@ -1377,11 +1377,15 @@ class ComputeTestCase(BaseTestCase):
 
         instance = jsonutils.to_primitive(self._create_fake_instance())
         self.compute.run_instance(self.context, instance=instance)
-        db.instance_update(self.context, instance['uuid'],
-                           {"task_state": task_states.POWERING_ON})
-        self.compute.start_instance(self.context, instance=instance)
+        extra = ['system_metadata', 'metadata']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=instance['uuid'],
+                                                     expected_attrs=extra)
+        inst_obj.task_state = task_states.POWERING_ON
+        inst_obj.save(self.context)
+        self.compute.start_instance(self.context, instance=inst_obj)
         self.assertTrue(called['power_on'])
-        self.compute.terminate_instance(self.context, instance=instance)
+        self.compute.terminate_instance(self.context, instance=inst_obj)
 
     def test_power_off(self):
         # Ensure instance can be powered off.
@@ -1396,11 +1400,15 @@ class ComputeTestCase(BaseTestCase):
 
         instance = jsonutils.to_primitive(self._create_fake_instance())
         self.compute.run_instance(self.context, instance=instance)
-        db.instance_update(self.context, instance['uuid'],
-                           {"task_state": task_states.POWERING_OFF})
-        self.compute.stop_instance(self.context, instance=instance)
+        extra = ['system_metadata', 'metadata']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=instance['uuid'],
+                                                     expected_attrs=extra)
+        inst_obj.task_state = task_states.POWERING_OFF
+        inst_obj.save(self.context)
+        self.compute.stop_instance(self.context, instance=inst_obj)
         self.assertTrue(called['power_off'])
-        self.compute.terminate_instance(self.context, instance=instance)
+        self.compute.terminate_instance(self.context, instance=inst_obj)
 
     def test_pause(self):
         # Ensure instance can be paused and unpaused.

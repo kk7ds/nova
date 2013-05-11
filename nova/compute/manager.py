@@ -1491,12 +1491,11 @@ class ComputeManager(manager.SchedulerDependentManager):
         self._notify_about_instance_usage(context, instance, "power_off.start")
         self.driver.power_off(instance)
         current_power_state = self._get_power_state(context, instance)
-        instance = self._instance_update(context, instance['uuid'],
-                power_state=current_power_state,
-                vm_state=vm_states.STOPPED,
-                expected_task_state=(task_states.POWERING_OFF,
-                                     task_states.STOPPING),
-                task_state=None)
+        instance.power_state = current_power_state
+        instance.vm_state = vm_states.STOPPED
+        instance.task_state = None
+        instance.save(context, expected_task_state=(task_states.POWERING_OFF,
+                                                    task_states.STOPPING))
         self._notify_about_instance_usage(context, instance, "power_off.end")
 
     # NOTE(johannes): This is probably better named power_on_instance
@@ -1511,12 +1510,11 @@ class ComputeManager(manager.SchedulerDependentManager):
         self._notify_about_instance_usage(context, instance, "power_on.start")
         self.driver.power_on(instance)
         current_power_state = self._get_power_state(context, instance)
-        instance = self._instance_update(context, instance['uuid'],
-                power_state=current_power_state,
-                vm_state=vm_states.ACTIVE,
-                task_state=None,
-                expected_task_state=(task_states.POWERING_ON,
-                                     task_states.STARTING))
+        instance.power_state = current_power_state
+        instance.vm_state = vm_states.ACTIVE
+        instance.task_state = None
+        instance.save(context, expected_task_state=(task_states.POWERING_ON,
+                                                    task_states.STARTING))
         self._notify_about_instance_usage(context, instance, "power_on.end")
 
     @exception.wrap_exception(notifier=notifier, publisher_id=publisher_id())
