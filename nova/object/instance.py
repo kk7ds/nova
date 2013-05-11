@@ -54,21 +54,35 @@ def ip_or_none(version):
 
     return validator
 
+def dt_serializer(name):
+    def serializer(self, name=name):
+        if self[name] is not None:
+            return timeutils.isotime(self[name])
+        else:
+            return None
+    return serializer
+
+def dt_deserializer(instance, val):
+    if val is None:
+        return None
+    else:
+        return timeutils.parse_isotime(val)
+
 class Instance(base.NovaObject):
     fields = {
         'id': int,
 
-        'user_id': str,
-        'project_id': str,
+        'user_id': str_or_none,
+        'project_id': str_or_none,
 
-        'image_ref': str,
-        'kernel_id': str,
-        'ramdisk_id': str,
-        'hostname': str,
+        'image_ref': str_or_none,
+        'kernel_id': str_or_none,
+        'ramdisk_id': str_or_none,
+        'hostname': str_or_none,
 
         'launch_index': int_or_none,
-        'key_name': str,
-        'key_data': str,
+        'key_name': str_or_none,
+        'key_data': str_or_none,
 
         'power_state': int_or_none,
         'vm_state': str_or_none,
@@ -79,14 +93,14 @@ class Instance(base.NovaObject):
         'root_gb': int_or_none,
         'ephemeral_gb': int_or_none,
 
-        'host': str,
-        'node': str,
+        'host': str_or_none,
+        'node': str_or_none,
 
         'instance_type_id': int_or_none,
 
-        'user_data': str,
+        'user_data': str_or_none,
 
-        'reservation_id': str,
+        'reservation_id': str_or_none,
 
         'created_at': datetime_or_none,
         'updated_at': datetime_or_none,
@@ -95,23 +109,23 @@ class Instance(base.NovaObject):
         'launched_at': datetime_or_none,
         'terminated_at': datetime_or_none,
 
-        'availability_zone': str,
+        'availability_zone': str_or_none,
 
-        'display_name': str,
-        'display_description': str,
+        'display_name': str_or_none,
+        'display_description': str_or_none,
 
-        'launched_on': str,
+        'launched_on': str_or_none,
         'locked': bool,
 
-        'os_type': str,
-        'architecture': str,
-        'vm_mode': str,
-        'uuid': str,
+        'os_type': str_or_none,
+        'architecture': str_or_none,
+        'vm_mode': str_or_none,
+        'uuid': str_or_none,
 
-        'root_device_name': str,
-        'default_ephemeral_device': str,
-        'default_swap_device': str,
-        'config_drive': str,
+        'root_device_name': str_or_none,
+        'default_ephemeral_device': str_or_none,
+        'default_swap_device': str_or_none,
+        'config_drive': str_or_none,
 
         'access_ip_v4': ip_or_none(4),
         'access_ip_v6': ip_or_none(6),
@@ -122,7 +136,7 @@ class Instance(base.NovaObject):
         'shutdown_terminate': bool,
         'disable_terminate': bool,
 
-        'cell_name': str,
+        'cell_name': str_or_none,
 
         'metadata': dict,
         'system_metadata': dict,
@@ -162,41 +176,19 @@ class Instance(base.NovaObject):
         else:
             return None
 
-    def _attr_created_at_to_primitive(self):
-        return timeutils.isotime(self.created_at)
+    _attr_created_at_to_primitive = dt_serializer('created_at')
+    _attr_updated_at_to_primitive = dt_serializer('updated_at')
+    _attr_deleted_at_to_primitive = dt_serializer('deleted_at')
+    _attr_scheduled_at_to_primitive = dt_serializer('scheduled_at')
+    _attr_launched_at_to_primitive = dt_serializer('launched_at')
+    _attr_terminated_at_to_primitive = dt_serializer('terminated_at')
 
-    def _attr_updated_at_to_primitive(self):
-        return timeutils.isotime(self.updated_at)
-
-    def _attr_deleted_at_to_primitive(self):
-        return timeutils.isotime(self.deleted_at)
-
-    def _attr_scheduled_at_to_primitive(self):
-        return timeutils.isotime(self.scheduled_at)
-
-    def _attr_launched_at_to_primitive(self):
-        return timeutils.isotime(self.launched_at)
-
-    def _attr_terminated_at_to_primitive(self):
-        return timeutils.isotime(self.terminated_at)
-
-    def _attr_scheduled_at_from_primitive(self, value):
-        return timeutils.parse_isotime(value)
-
-    def _attr_created_at_from_primitive(self, value):
-        return timeutils.parse_isotime(value)
-
-    def _attr_updated_at_from_primitive(self, value):
-        return timeutils.parse_isotime(value)
-
-    def _attr_deleted_at_from_primitive(self, value):
-        return timeutils.parse_isotime(value)
-
-    def _attr_launched_at_from_primitive(self, value):
-        return timeutils.parse_isotime(value)
-
-    def _attr_terminated_at_from_primitive(self, value):
-        return timeutils.parse_isotime(value)
+    _attr_created_at_from_primitive = dt_deserializer
+    _attr_updated_at_from_primitive = dt_deserializer
+    _attr_deleted_at_from_primitive = dt_deserializer
+    _attr_scheduled_at_from_primitive = dt_deserializer
+    _attr_launched_at_from_primitive = dt_deserializer
+    _attr_terminated_at_from_primitive = dt_deserializer
 
     @classmethod
     def _from_db_object(cls, db_inst, expected_attrs=None):
@@ -252,3 +244,16 @@ class Instance(base.NovaObject):
             notifications.send_update(context, old_ref, inst_ref)
 
         self.reset_changes()
+
+    @base.magic
+    def refresh(self, context):
+        extra = []
+        for field in ['system_metadata', 'metadata']:
+            if hasattr(self, base.get_attrname(field)):
+                extra.append(field)
+        current = Instance.get_by_uuid(context, uuid=self.uuid,
+                                       expected_attrs=extra)
+        for field in self.fields:
+            if (hasattr(self, base.get_attrname(field)) and
+                self[field] != current[field]):
+                self[field] = current[field]

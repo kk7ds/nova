@@ -393,6 +393,8 @@ class TestRemoteInstanceObject(_RemoteTest):
         self.fake_instance = fakes.stub_instance(id=2,
                                                  access_ipv4='1.2.3.4',
                                                  access_ipv6='::1')
+        self.fake_instance['scheduled_at'] = None
+        self.fake_instance['terminated_at'] = None
         self.fake_instance['deleted_at'] = None
         self.fake_instance['created_at'] = None
         self.fake_instance['updated_at'] = None
@@ -414,3 +416,17 @@ class TestRemoteInstanceObject(_RemoteTest):
                          self.fake_instance['access_ip_v4'])
         self.assertEqual(str(inst.access_ip_v6),
                          self.fake_instance['access_ip_v6'])
+
+    def test_refresh(self):
+        ctxt = context.get_admin_context()
+        self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
+        fake_uuid = self.fake_instance['uuid']
+        db.instance_get_by_uuid(ctxt, fake_uuid, []).AndReturn(
+            dict(self.fake_instance, host='orig-host'))
+        db.instance_get_by_uuid(ctxt, fake_uuid, []).AndReturn(
+            dict(self.fake_instance, host='new-host'))
+        self.mox.ReplayAll()
+        inst = instance.Instance.get_by_uuid(ctxt, uuid=fake_uuid)
+        self.assertEqual(inst.host, 'orig-host')
+        inst.refresh(ctxt)
+        self.assertEqual(inst.host, 'new-host')

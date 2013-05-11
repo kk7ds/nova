@@ -5068,13 +5068,13 @@ class ComputeAPITestCase(BaseTestCase):
         inst_obj.task_state = task_states.POWERING_OFF
         inst_obj.save(self.context)
         self.compute.stop_instance(self.context, instance=inst_obj)
+        inst_obj.refresh(self.context)
 
         instance = db.instance_get_by_uuid(self.context, instance_uuid)
         self.assertEqual(instance['task_state'], None)
+        self.assertEqual(inst_obj.task_state, None)
+        self.assertEqual(inst_obj.vm_state, vm_states.STOPPED)
 
-        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
-                                                     uuid=instance_uuid,
-                                                     expected_attrs=extra)
         self.compute_api.start(self.context, inst_obj)
 
         instance = db.instance_get_by_uuid(self.context, instance_uuid)
@@ -5103,7 +5103,6 @@ class ComputeAPITestCase(BaseTestCase):
 
         inst_obj = instance_obj.Instance.get_by_uuid(self.context,
                                                      uuid=instance_uuid)
-        print "Inst.task_state: %s" % repr(inst_obj.task_state)
         self.compute_api.stop(self.context, inst_obj)
 
         instance = db.instance_get_by_uuid(self.context, instance_uuid)
@@ -5123,37 +5122,35 @@ class ComputeAPITestCase(BaseTestCase):
         db.instance_destroy(self.context, instance['uuid'])
 
     def test_start_shutdown(self):
-        def check_state(instance_uuid, power_state_, vm_state_, task_state_):
-            instance = db.instance_get_by_uuid(self.context, instance_uuid)
-            self.assertEqual(instance['power_state'], power_state_)
-            self.assertEqual(instance['vm_state'], vm_state_)
-            self.assertEqual(instance['task_state'], task_state_)
+        def check_state(inst_obj, power_state_, vm_state_, task_state_):
+            inst_obj.refresh(self.context)
+            self.assertEqual(inst_obj.power_state, power_state_)
+            self.assertEqual(inst_obj.vm_state, vm_state_)
+            self.assertEqual(inst_obj.task_state, task_state_)
 
-        def start_check_state(instance_uuid,
+        def start_check_state(inst_obj,
                               power_state_, vm_state_, task_state_):
-            instance = instance_obj.Instance.get_by_uuid(self.context,
-                                                         uuid=instance_uuid)
-            self.compute_api.start(self.context, instance)
-            check_state(instance_uuid, power_state_, vm_state_, task_state_)
+            self.compute_api.start(self.context, inst_obj)
+            check_state(inst_obj, power_state_, vm_state_, task_state_)
 
         instance = jsonutils.to_primitive(self._create_fake_instance())
         self.compute.run_instance(self.context, instance=instance)
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=instance['uuid'])
 
-        check_state(instance['uuid'], power_state.RUNNING, vm_states.ACTIVE,
-                    None)
+        check_state(inst_obj, power_state.RUNNING, vm_states.ACTIVE, None)
 
         # NOTE(yamahata): emulate compute.manager._sync_power_state() that
         # the instance is shutdown by itself
-        db.instance_update(self.context, instance['uuid'],
-                           {'power_state': power_state.NOSTATE,
-                            'vm_state': vm_states.STOPPED})
-        check_state(instance['uuid'], power_state.NOSTATE, vm_states.STOPPED,
-                    None)
+        inst_obj.power_state = power_state.NOSTATE
+        inst_obj.vm_state = vm_states.STOPPED
+        inst_obj.save(self.context)
+        check_state(inst_obj, power_state.NOSTATE, vm_states.STOPPED, None)
 
-        start_check_state(instance['uuid'], power_state.NOSTATE,
+        start_check_state(inst_obj, power_state.NOSTATE,
                           vm_states.STOPPED, task_states.POWERING_ON)
 
-        db.instance_destroy(self.context, instance['uuid'])
+        db.instance_destroy(self.context, inst_obj.uuid)
 
     def test_delete(self):
         instance, instance_uuid = self._run_instance(params={
