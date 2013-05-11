@@ -1639,9 +1639,8 @@ class CloudController(object):
             if vm_state == vm_states.ACTIVE:
                 restart_instance = True
                 # FIXME(danms): Temporary object conversion!
-                inst_obj = instance_obj.Instance.get_by_uuid(
-                    context, instance,
-                    expected_attrs=['system_metadata', 'metadata'])
+                inst_obj = instance_obj.Instance._from_db_object(
+                    instance, expected_attrs=['system_metadata', 'metadata'])
                 self.compute_api.stop(context, inst_obj)
 
             # wait instance for really stopped
