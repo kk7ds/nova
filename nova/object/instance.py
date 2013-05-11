@@ -231,11 +231,23 @@ class Instance(base.NovaObject):
         return cls._from_db_object(db_inst, expected_attrs)
 
     @base.magic
-    def save(self, context):
+    def save(self, context, expected_task_state=None):
+        """Save updates to this instance
+
+        Column-wise updates will be made based on the result of
+        self.what_changed(). If expected_task_state is provided,
+        it will be checked against the in-database copy of the
+        instance before updates are made.
+        :param context: Security context
+        :param expected_task_state: Optional tuple of valid task states
+                                    for the instance to be in.
+        """
         updates = dict()
         changes = self.what_changed()
         for field in changes:
             updates[field] = self[field]
+        if expected_task_state is not None:
+            updates['expected_task_state'] = expected_task_state
         old_ref, inst_ref = db.instance_update_and_get_original(context,
                                                                 self.uuid,
                                                                 updates)
