@@ -15,9 +15,11 @@
 """Nova common internal object model"""
 
 from nova import exception
+from nova.openstack.common import log as logging
 import nova.openstack.common.rpc.proxy
 import nova.openstack.common.rpc.dispatcher
 
+LOG = logging.getLogger('object')
 
 def get_attrname(name):
     """Return the mangled name of the attribute's underlying storage"""
@@ -40,7 +42,8 @@ def make_class_properties(cls):
                 return setattr(self, get_attrname(name), typefn(value))
             except Exception, e:
                 # This should probably be a log call, but print for now
-                print "Error setting %s.%s: %s" % (self.objname(), name, e)
+                attr = "%s.%s" % (self.objname(), name)
+                LOG.exception(_('Error setting %(attr)s') % attr)
                 raise
 
         setattr(cls, name, property(getter, setter))
@@ -92,16 +95,20 @@ def magic(fn):
     return wrapper
 
 
+class UnsupportedObjectError(exception.NovaException):
+    message = _('Unsupported object type %(objtype)s')
+
+
 class IncompatibleObjectVersion(exception.NovaException):
     pass
 
 
 class IncompatibleObjectMajorVersion(IncompatibleObjectVersion):
-    _message = _('Incompatible major version (%(client) != %(server))')
+    message = _('Incompatible major version (%(client)s != %(server)s)')
 
 
 class IncompatibleObjectMinorVersion(IncompatibleObjectVersion):
-    _message = _('Incompatible minor version (%(client) > %(server))')
+    message = _('Incompatible minor version (%(client)s > %(server)s)')
 
 
 # Object versioning rules
@@ -150,7 +157,12 @@ class NovaObject(object):
 
     @classmethod
     def class_from_name(cls, objname):
-        return cls._obj_classes[objname]
+        try:
+            return cls._obj_classes[objname]
+        except KeyError:
+            LOG.error(_('Unable to instantiate unregistered object type '
+                        '%(objtype)s') % dict(objtype=objname))
+            raise UnsupportedObjectError(objtype=objname)
 
     def _attr_from_primitive(self, attribute, value):
         handler = '_attr_%s_from_primitive' % attribute
@@ -162,7 +174,7 @@ class NovaObject(object):
     def from_primitive(cls, primitive, version='1.0'):
         """Simple base-case hydration"""
         objname = primitive['nova_object.name']
-        objclass = cls._obj_classes[objname]
+        objclass = cls.class_from_name(objname)
         check_object_version(objclass.version, version)
         self = objclass()
         data = primitive['nova_object.data']

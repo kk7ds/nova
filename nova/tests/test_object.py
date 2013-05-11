@@ -150,6 +150,11 @@ class TestObject(_ObjectTest):
         mig2.reset_changes()
         self.assertEqual(mig2.what_changed(), set())
 
+    def test_unknown_objtype(self):
+        self.assertRaises(base.UnsupportedObjectError,
+                          base.NovaObject.class_from_name, 'foo')
+
+
 @contextlib.contextmanager
 def things_temporarily_local():
     # Temporarily go non-remote so the conductor handles

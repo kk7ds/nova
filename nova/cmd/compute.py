@@ -28,7 +28,8 @@ from nova import config
 from nova.conductor import rpcapi as conductor_rpcapi
 import nova.db.api
 from nova import exception
-from nova.object import object_base
+from nova.object import base as object_base
+from nova.object import instance  # Required for registration!
 from nova.openstack.common import log as logging
 from nova import service
 from nova import utils
