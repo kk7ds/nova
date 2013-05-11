@@ -453,4 +453,11 @@ class ConductorManager(manager.Manager):
 
     def object_action(self, context, objinst, objmethod, objver,
                       **kwargs):
-        return getattr(objinst, objmethod)(context, **kwargs)
+        result = getattr(objinst, objmethod)(context, **kwargs)
+        updates = dict()
+        # NOTE(danms): We expect the object to reset the changed flag
+        # for any fields it took action on, so if the field is still
+        # marked as changed, we need to assume it's newly changed.
+        for field in objinst.what_changed():
+            updates[field] = objinst._attr_to_primitive(field)
+        return updates, result

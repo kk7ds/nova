@@ -51,6 +51,9 @@ class MyObj(base.NovaObject):
     def marco(self, context):
         return 'polo'
 
+    @base.magic
+    def update_test(self, context):
+        self.bar = 'updated'
 
 class TestMetaclass(test.TestCase):
     def test_obj_tracking(self):
@@ -234,6 +237,14 @@ class TestRemoteObject(_RemoteTest):
         obj = MyObj.get(ctxt)
         self.assertEqual(obj.bar, 'bar')
 
+    def test_updates(self):
+        ctxt = context.get_admin_context()
+        obj = MyObj.get(ctxt)
+        self.assertEqual(obj.foo, 1)
+        self.assertEqual(self.remote_object_calls, [('MyObj', 'get')])
+        obj.update_test(ctxt)
+        self.assertEqual(obj.bar, 'updated')
+        self.assertEqual(self.remote_object_calls[1][1], 'update_test')
 
 class TestMigrationObject(_ObjectTest):
     def test_hydration(self):

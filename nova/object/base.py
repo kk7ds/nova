@@ -76,8 +76,12 @@ def magic_static(fn):
 def magic(fn):
     def wrapper(self, context, **kwargs):
         if NovaObject.indirection_api:
-            return NovaObject.indirection_api.object_action(
+            updates, result = NovaObject.indirection_api.object_action(
                 context, self, fn.__name__, self.version, kwargs)
+            for key, value in updates.iteritems():
+                self[key] = value
+            self.reset_changes(updates.keys())
+            return result
         else:
             return fn(self, context, **kwargs)
     return wrapper
@@ -199,12 +203,16 @@ class NovaObject(object):
     def what_changed(self):
         return self._changed_fields
 
-    def reset_changes(self):
+    def reset_changes(self, fields=None):
         """Reset the list of fields that have been changed.
 
         Note that this is NOT "revert to previous values"
         """
-        self._changed_fields.clear()
+        if fields:
+            for field in fields:
+                self._changed_fields.discard(field)
+        else:
+            self._changed_fields.clear()
 
     # dictish syntactic sugar
     def iteritems(self):
