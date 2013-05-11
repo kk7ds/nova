@@ -582,16 +582,14 @@ class ComputeAPI(object_base.NovaObjProxy):
                 topic=_compute_topic(self.topic, ctxt, None, instance))
 
     def start_instance(self, ctxt, instance):
-        instance_p = jsonutils.to_primitive(instance)
         self.cast(ctxt, self.make_msg('start_instance',
-                instance=instance_p),
+                instance=instance),
                 topic=_compute_topic(self.topic, ctxt, None, instance))
 
     def stop_instance(self, ctxt, instance, cast=True):
         rpc_method = self.cast if cast else self.call
-        instance_p = jsonutils.to_primitive(instance)
         return rpc_method(ctxt, self.make_msg('stop_instance',
-                instance=instance_p),
+                instance=instance),
                 topic=_compute_topic(self.topic, ctxt, None, instance))
 
     def suspend_instance(self, ctxt, instance):

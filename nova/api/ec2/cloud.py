@@ -43,6 +43,7 @@ from nova import exception
 from nova.image import s3
 from nova import network
 from nova.network.security_group import quantum_driver
+from nova.object import instance_obj
 from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
 from nova import quota
@@ -1372,8 +1373,13 @@ class CloudController(object):
         Here instance_id is a list of instance ids"""
         instances = self._ec2_ids_to_instances(context, instance_id)
         LOG.debug(_("Going to stop instances"))
+        extra = ['system_metadata', 'metadata']
         for instance in instances:
-            self.compute_api.stop(context, instance)
+            # Temporary measure to get objects
+            inst_obj = instance_obj.Instance.get_by_uuid(context,
+                                                         uuid=instance['uuid'],
+                                                         expected_attrs=extra)
+            self.compute_api.stop(context, inst_obj)
         return True
 
     def start_instances(self, context, instance_id, **kwargs):
@@ -1381,8 +1387,13 @@ class CloudController(object):
         Here instance_id is a list of instance ids"""
         instances = self._ec2_ids_to_instances(context, instance_id)
         LOG.debug(_("Going to start instances"))
+        extra = ['system_metadata', 'metadata']
         for instance in instances:
-            self.compute_api.start(context, instance)
+            # Temporary measure to get objects
+            inst_obj = instance_obj.Instance.get_by_uuid(context,
+                                                         uuid=instance['uuid'],
+                                                         expected_attrs=extra)
+            self.compute_api.start(context, inst_obj)
         return True
 
     def _get_image(self, context, ec2_id):

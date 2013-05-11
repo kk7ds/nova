@@ -48,6 +48,7 @@ from nova.image import glance
 from nova.network import api as network_api
 from nova.network import model as network_model
 from nova.network.security_group import openstack_driver
+from nova.object import instance as instance_obj
 from nova.openstack.common import importutils
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
@@ -1261,7 +1262,12 @@ class ComputeTestCase(BaseTestCase):
         self.compute.run_instance(self.context, instance=instance)
         db.instance_update(self.context, instance['uuid'],
                            {"task_state": task_states.POWERING_OFF})
-        self.compute.stop_instance(self.context, instance=instance)
+        inst_uuid = instance['uuid']
+        extra = ['system_metadata', 'metadata']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=inst_uuid,
+                                                     expected_attrs=extra)
+        self.compute.stop_instance(self.context, instance=inst_obj)
         self.compute.terminate_instance(self.context, instance=instance)
 
     def test_start(self):
@@ -1270,10 +1276,15 @@ class ComputeTestCase(BaseTestCase):
         self.compute.run_instance(self.context, instance=instance)
         db.instance_update(self.context, instance['uuid'],
                            {"task_state": task_states.POWERING_OFF})
-        self.compute.stop_instance(self.context, instance=instance)
-        db.instance_update(self.context, instance['uuid'],
-                           {"task_state": task_states.POWERING_ON})
-        self.compute.start_instance(self.context, instance=instance)
+        extra = ['system_metadata', 'metadata']
+        inst_uuid = instance['uuid']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=inst_uuid,
+                                                     expected_attrs=extra)
+        self.compute.stop_instance(self.context, instance=inst_obj)
+        inst_obj.task_state = task_states.POWERING_ON
+        inst_obj.save(self.context)
+        self.compute.start_instance(self.context, instance=inst_obj)
         self.compute.terminate_instance(self.context, instance=instance)
 
     def test_stop_start_no_image(self):
@@ -1282,10 +1293,15 @@ class ComputeTestCase(BaseTestCase):
         self.compute.run_instance(self.context, instance=instance)
         db.instance_update(self.context, instance['uuid'],
                            {"task_state": task_states.POWERING_OFF})
-        self.compute.stop_instance(self.context, instance=instance)
-        db.instance_update(self.context, instance['uuid'],
-                           {"task_state": task_states.POWERING_ON})
-        self.compute.start_instance(self.context, instance=instance)
+        extra = ['system_metadata', 'metadata']
+        inst_uuid = instance['uuid']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=inst_uuid,
+                                                     expected_attrs=extra)
+        self.compute.stop_instance(self.context, instance=inst_obj)
+        inst_obj.task_state = task_states.POWERING_ON
+        inst_obj.save(self.context)
+        self.compute.start_instance(self.context, instance=inst_obj)
         self.compute.terminate_instance(self.context, instance=instance)
 
     def test_rescue(self):
@@ -5045,14 +5061,21 @@ class ComputeAPITestCase(BaseTestCase):
         instance_uuid = instance['uuid']
         self.compute.run_instance(self.context, instance=instance)
 
-        db.instance_update(self.context, instance['uuid'],
-                           {"task_state": task_states.POWERING_OFF})
-        self.compute.stop_instance(self.context, instance=instance)
+        extra = ['system_metadata', 'metadata']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=instance_uuid,
+                                                     expected_attrs=extra)
+        inst_obj.task_state = task_states.POWERING_OFF
+        inst_obj.save(self.context)
+        self.compute.stop_instance(self.context, instance=inst_obj)
 
         instance = db.instance_get_by_uuid(self.context, instance_uuid)
         self.assertEqual(instance['task_state'], None)
 
-        self.compute_api.start(self.context, instance)
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=instance_uuid,
+                                                     expected_attrs=extra)
+        self.compute_api.start(self.context, inst_obj)
 
         instance = db.instance_get_by_uuid(self.context, instance_uuid)
         self.assertEqual(instance['task_state'], task_states.POWERING_ON)
@@ -5061,10 +5084,12 @@ class ComputeAPITestCase(BaseTestCase):
 
     def test_start_no_host(self):
         instance = self._create_fake_instance(params={'host': ''})
-
+        inst_uuid = instance['uuid']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=inst_uuid)
         self.assertRaises(exception.InstanceNotReady,
                           self.compute_api.start,
-                          self.context, instance)
+                          self.context, inst_obj)
 
         db.instance_destroy(self.context, instance['uuid'])
 
@@ -5076,7 +5101,10 @@ class ComputeAPITestCase(BaseTestCase):
         instance = db.instance_get_by_uuid(self.context, instance_uuid)
         self.assertEqual(instance['task_state'], None)
 
-        self.compute_api.stop(self.context, instance)
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=instance_uuid)
+        print "Inst.task_state: %s" % repr(inst_obj.task_state)
+        self.compute_api.stop(self.context, inst_obj)
 
         instance = db.instance_get_by_uuid(self.context, instance_uuid)
         self.assertEqual(instance['task_state'], task_states.POWERING_OFF)
@@ -5085,10 +5113,12 @@ class ComputeAPITestCase(BaseTestCase):
 
     def test_stop_no_host(self):
         instance = self._create_fake_instance(params={'host': ''})
-
+        inst_uuid = instance['uuid']
+        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
+                                                     uuid=inst_uuid)
         self.assertRaises(exception.InstanceNotReady,
                           self.compute_api.stop,
-                          self.context, instance)
+                          self.context, inst_obj)
 
         db.instance_destroy(self.context, instance['uuid'])
 
@@ -5101,7 +5131,8 @@ class ComputeAPITestCase(BaseTestCase):
 
         def start_check_state(instance_uuid,
                               power_state_, vm_state_, task_state_):
-            instance = db.instance_get_by_uuid(self.context, instance_uuid)
+            instance = instance_obj.Instance.get_by_uuid(self.context,
+                                                         uuid=instance_uuid)
             self.compute_api.start(self.context, instance)
             check_state(instance_uuid, power_state_, vm_state_, task_state_)
 
