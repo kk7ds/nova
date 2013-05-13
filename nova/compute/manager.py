@@ -60,6 +60,7 @@ from nova import manager
 from nova import network
 from nova.network import model as network_model
 from nova.network.security_group import openstack_driver
+from nova.object import instance as instance_obj
 from nova.openstack.common import excutils
 from nova.openstack.common import jsonutils
 from nova.openstack.common import lockutils
@@ -1733,7 +1734,11 @@ class ComputeManager(manager.SchedulerDependentManager):
                                  task_state=task_states.STOPPING,
                                  terminated_at=timeutils.utcnow(),
                                  progress=0)
-                self.stop_instance(context, instance)
+                # FIXME(danms): Temporary, for object transition
+                extra = ['system_metadata', 'metadata']
+                inst_obj = instance_obj.Instance.get_by_uuid(
+                    context, uuid=instance['uuid'], expected_attrs=extra)
+                self.stop_instance(context, inst_obj)
 
             self._notify_about_instance_usage(
                     context, instance, "rebuild.end",
