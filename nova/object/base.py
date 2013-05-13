@@ -43,7 +43,7 @@ def make_class_properties(cls):
             except Exception, e:
                 # This should probably be a log call, but print for now
                 attr = "%s.%s" % (self.objname(), name)
-                LOG.exception(_('Error setting %(attr)s') % attr)
+                LOG.exception(_('Error setting %(attr)s') % locals())
                 raise
 
         setattr(cls, name, property(getter, setter))
