@@ -34,6 +34,7 @@ import nova
 from nova import compute
 from nova.compute import api as compute_api
 from nova.compute import flavors
+from nova.compute import instance_actions
 from nova.compute import manager as compute_manager
 from nova.compute import power_state
 from nova.compute import rpcapi as compute_rpcapi
@@ -228,6 +229,7 @@ class BaseTestCase(test.TestCase):
 
         inst = {}
         inst['vm_state'] = vm_states.ACTIVE
+        inst['task_state'] = None
         inst['image_ref'] = FAKE_IMAGE_REF
         inst['reservation_id'] = 'r-fakeres'
         inst['launch_time'] = '10'
@@ -245,10 +247,27 @@ class BaseTestCase(test.TestCase):
         inst['architecture'] = 'x86_64'
         inst['os_type'] = 'Linux'
         inst['system_metadata'] = make_fake_sys_meta()
+        inst['locked'] = False
         inst.update(params)
         _create_service_entries(self.context.elevated(),
                 {'fake_zone': [inst['host']]})
         return db.instance_create(self.context, inst)
+
+    def _create_instance_obj(self, params=None,
+            type_name='m1.tiny'):
+        """Create a test instance object."""
+        instance = instance_obj.Instance()
+        instance.uuid = uuidutils.generate_uuid()
+        instance.cell_name = 'api!child'
+
+        def _fake_db_create(_ctxt, inst):
+            for k, v in inst.items():
+                setattr(instance, k, v)
+            return instance
+
+        self.stubs.Set(db, 'instance_create', _fake_db_create)
+        return self._create_fake_instance(params=params,
+                type_name=type_name)
 
     def _create_instance(self, params=None, type_name='m1.tiny'):
         """Create a test instance. Returns uuid."""
@@ -5065,100 +5084,96 @@ class ComputeAPITestCase(BaseTestCase):
             db.instance_destroy(self.context, ref[0]['uuid'])
 
     def test_start(self):
-        instance = jsonutils.to_primitive(self._create_fake_instance())
-        instance_uuid = instance['uuid']
-        self.compute.run_instance(self.context, instance=instance)
+        # Undo setUp() stubs (test_compute_cells)
+        self.stubs.UnsetAll()
+        instance = self._create_instance_obj()
+        instance.vm_state = vm_states.STOPPED
 
-        extra = ['system_metadata', 'metadata']
-        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
-                                                     uuid=instance_uuid,
-                                                     expected_attrs=extra)
-        inst_obj.task_state = task_states.POWERING_OFF
-        inst_obj.save(self.context)
-        self.compute.stop_instance(self.context, instance=inst_obj)
-        inst_obj.refresh(self.context)
+        self.mox.StubOutWithMock(instance, 'save')
+        self.mox.StubOutWithMock(self.compute_api,
+                '_record_action_start')
+        self.mox.StubOutWithMock(
+                self.compute_api.compute_rpcapi,
+                'start_instance')
 
-        instance = db.instance_get_by_uuid(self.context, instance_uuid)
-        self.assertEqual(instance['task_state'], None)
-        self.assertEqual(inst_obj.task_state, None)
-        self.assertEqual(inst_obj.vm_state, vm_states.STOPPED)
+        instance.save(self.context,
+                expected_task_state=None)
+        self.compute_api._record_action_start(self.context,
+                instance, instance_actions.START)
+        self.compute_api.compute_rpcapi.start_instance(
+                self.context, instance)
 
-        self.compute_api.start(self.context, inst_obj)
+        self.mox.ReplayAll()
 
-        instance = db.instance_get_by_uuid(self.context, instance_uuid)
-        self.assertEqual(instance['task_state'], task_states.POWERING_ON)
+        self.compute_api.start(self.context, instance)
+        self.assertEqual(task_states.POWERING_ON,
+                         instance.task_state)
 
-        db.instance_destroy(self.context, instance['uuid'])
+    def test_start_invalid_state(self):
+        # Undo setUp() stubs (test_compute_cells)
+        self.stubs.UnsetAll()
+        instance = self._create_instance_obj()
+        instance.vm_state = vm_states.ACTIVE
+        self.assertRaises(exception.InstanceInvalidState,
+                          self.compute_api.start,
+                          self.context, instance)
 
     def test_start_no_host(self):
-        instance = self._create_fake_instance(params={'host': ''})
-        inst_uuid = instance['uuid']
-        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
-                                                     uuid=inst_uuid)
+        # Undo setUp() stubs (test_compute_cells)
+        self.stubs.UnsetAll()
+        instance = self._create_instance_obj()
+        instance.vm_state = vm_states.STOPPED
+        instance.host = ''
         self.assertRaises(exception.InstanceNotReady,
                           self.compute_api.start,
-                          self.context, inst_obj)
-
-        db.instance_destroy(self.context, instance['uuid'])
+                          self.context, instance)
 
     def test_stop(self):
-        instance = jsonutils.to_primitive(self._create_fake_instance())
-        instance_uuid = instance['uuid']
-        self.compute.run_instance(self.context, instance=instance)
+        # Undo setUp() stubs (test_compute_cells)
+        self.stubs.UnsetAll()
+        instance = self._create_instance_obj()
+        instance.task_state = None
+        # Make sure this gets reset
+        instance.progress = 99
 
-        instance = db.instance_get_by_uuid(self.context, instance_uuid)
-        self.assertEqual(instance['task_state'], None)
+        self.mox.StubOutWithMock(instance, 'save')
+        self.mox.StubOutWithMock(self.compute_api,
+                '_record_action_start')
+        self.mox.StubOutWithMock(
+                self.compute_api.compute_rpcapi,
+                'stop_instance')
 
-        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
-                                                     uuid=instance_uuid)
-        self.compute_api.stop(self.context, inst_obj)
+        instance.save(self.context,
+                expected_task_state=None)
+        self.compute_api._record_action_start(self.context,
+                instance, instance_actions.STOP)
+        self.compute_api.compute_rpcapi.stop_instance(
+                self.context, instance, cast=True)
 
-        instance = db.instance_get_by_uuid(self.context, instance_uuid)
-        self.assertEqual(instance['task_state'], task_states.POWERING_OFF)
+        self.mox.ReplayAll()
 
-        db.instance_destroy(self.context, instance['uuid'])
+        self.compute_api.stop(self.context, instance)
+        self.assertEqual(task_states.POWERING_OFF,
+                         instance.task_state)
+        self.assertEqual(0, instance.progress)
+
+    def test_stop_invalid_state(self):
+        # Undo setUp() stubs (test_compute_cells)
+        self.stubs.UnsetAll()
+        instance = self._create_instance_obj()
+        instance.vm_state = vm_states.PAUSED
+        self.assertRaises(exception.InstanceInvalidState,
+                          self.compute_api.stop,
+                          self.context, instance)
 
     def test_stop_no_host(self):
-        instance = self._create_fake_instance(params={'host': ''})
-        inst_uuid = instance['uuid']
-        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
-                                                     uuid=inst_uuid)
+        # Undo setUp() stubs (test_compute_cells)
+        self.stubs.UnsetAll()
+        instance = self._create_instance_obj()
+        instance.host = ''
         self.assertRaises(exception.InstanceNotReady,
                           self.compute_api.stop,
-                          self.context, inst_obj)
-
-        db.instance_destroy(self.context, instance['uuid'])
-
-    def test_start_shutdown(self):
-        def check_state(inst_obj, power_state_, vm_state_, task_state_):
-            inst_obj.refresh(self.context)
-            self.assertEqual(inst_obj.power_state, power_state_)
-            self.assertEqual(inst_obj.vm_state, vm_state_)
-            self.assertEqual(inst_obj.task_state, task_state_)
-
-        def start_check_state(inst_obj,
-                              power_state_, vm_state_, task_state_):
-            self.compute_api.start(self.context, inst_obj)
-            check_state(inst_obj, power_state_, vm_state_, task_state_)
-
-        instance = jsonutils.to_primitive(self._create_fake_instance())
-        self.compute.run_instance(self.context, instance=instance)
-        inst_obj = instance_obj.Instance.get_by_uuid(self.context,
-                                                     uuid=instance['uuid'])
-
-        check_state(inst_obj, power_state.RUNNING, vm_states.ACTIVE, None)
-
-        # NOTE(yamahata): emulate compute.manager._sync_power_state() that
-        # the instance is shutdown by itself
-        inst_obj.power_state = power_state.NOSTATE
-        inst_obj.vm_state = vm_states.STOPPED
-        inst_obj.save(self.context)
-        check_state(inst_obj, power_state.NOSTATE, vm_states.STOPPED, None)
-
-        start_check_state(inst_obj, power_state.NOSTATE,
-                          vm_states.STOPPED, task_states.POWERING_ON)
-
-        db.instance_destroy(self.context, inst_obj.uuid)
+                          self.context, instance)
 
     def test_delete(self):
         instance, instance_uuid = self._run_instance(params={

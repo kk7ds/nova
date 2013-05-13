@@ -211,7 +211,7 @@ class NovaObject(object):
         This should use self._conductor, and cache any data that might
         be useful for future load operations.
         """
-        raise NotImplementedError('Cannot load anything in the base class')
+        raise NotImplementedError("Cannot load '%s' in the base class" % attrname)
 
     def save(self, context):
         """Save the changed fields back to the store."""
