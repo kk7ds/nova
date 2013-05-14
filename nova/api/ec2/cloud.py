@@ -1379,6 +1379,7 @@ class CloudController(object):
         instances = self._ec2_ids_to_instances(context, instance_id, True)
         LOG.debug(_("Going to stop instances"))
         for instance in instances:
+            print "Instance's context: %s " % instance._context
             self.compute_api.stop(context, instance)
         return True
 
@@ -1641,6 +1642,7 @@ class CloudController(object):
                 # FIXME(danms): Temporary object conversion!
                 inst_obj = instance_obj.Instance._from_db_object(
                     instance, expected_attrs=['system_metadata', 'metadata'])
+                inst_obj._context = context
                 self.compute_api.stop(context, inst_obj)
 
             # wait instance for really stopped
@@ -1686,6 +1688,7 @@ class CloudController(object):
             # FIXME(danms): Temporary object conversion!
             inst_obj = instance_obj.Instance._from_db_object(
                 instance, ['system_metadata', 'metadata'])
+            inst_obj._context = context
             self.compute_api.start(context, inst_obj)
 
         return {'imageId': ec2_id}

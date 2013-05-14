@@ -5096,8 +5096,7 @@ class ComputeAPITestCase(BaseTestCase):
                 self.compute_api.compute_rpcapi,
                 'start_instance')
 
-        instance.save(self.context,
-                expected_task_state=None)
+        instance.save(expected_task_state=None)
         self.compute_api._record_action_start(self.context,
                 instance, instance_actions.START)
         self.compute_api.compute_rpcapi.start_instance(
@@ -5143,8 +5142,7 @@ class ComputeAPITestCase(BaseTestCase):
                 self.compute_api.compute_rpcapi,
                 'stop_instance')
 
-        instance.save(self.context,
-                expected_task_state=None)
+        instance.save(expected_task_state=None)
         self.compute_api._record_action_start(self.context,
                 instance, instance_actions.STOP)
         self.compute_api.compute_rpcapi.stop_instance(

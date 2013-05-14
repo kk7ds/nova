@@ -1495,8 +1495,8 @@ class ComputeManager(manager.SchedulerDependentManager):
         instance.power_state = current_power_state
         instance.vm_state = vm_states.STOPPED
         instance.task_state = None
-        instance.save(context, expected_task_state=(task_states.POWERING_OFF,
-                                                    task_states.STOPPING))
+        instance.save(expected_task_state=(task_states.POWERING_OFF,
+                                           task_states.STOPPING))
         self._notify_about_instance_usage(context, instance, "power_off.end")
 
     # NOTE(johannes): This is probably better named power_on_instance
@@ -1514,8 +1514,8 @@ class ComputeManager(manager.SchedulerDependentManager):
         instance.power_state = current_power_state
         instance.vm_state = vm_states.ACTIVE
         instance.task_state = None
-        instance.save(context, expected_task_state=(task_states.POWERING_ON,
-                                                    task_states.STARTING))
+        instance.save(expected_task_state=(task_states.POWERING_ON,
+                                           task_states.STARTING))
         self._notify_about_instance_usage(context, instance, "power_on.end")
 
     @exception.wrap_exception(notifier=notifier, publisher_id=publisher_id())

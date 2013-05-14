@@ -1307,7 +1307,7 @@ class API(base.Base):
 
         instance.task_state = task_states.POWERING_OFF
         instance.progress = 0
-        instance.save(context, expected_task_state=None)
+        instance.save(expected_task_state=None)
 
         self._record_action_start(context, instance, instance_actions.STOP)
 
@@ -1322,8 +1322,7 @@ class API(base.Base):
         LOG.debug(_("Going to try to start instance"), instance=instance)
 
         instance.task_state = task_states.POWERING_ON
-        instance.save(context,
-                expected_task_state=None)
+        instance.save(expected_task_state=None)
 
         self._record_action_start(context, instance, instance_actions.START)
         # TODO(yamahata): injected_files isn't supported right now.
