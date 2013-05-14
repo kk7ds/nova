@@ -75,14 +75,22 @@ class NovaObjectMetaclass(type):
 def magic_static(fn):
     def wrapper(cls, context, **kwargs):
         if NovaObject.indirection_api:
-            return NovaObject.indirection_api.object_class_action(
+            result = NovaObject.indirection_api.object_class_action(
                 context, cls.objname(), fn.__name__, cls.version, kwargs)
         else:
-            return fn(cls, context, **kwargs)
+            result = fn(cls, context, **kwargs)
+            if isinstance(result, NovaObject):
+                result._context = context
+        return result
     return classmethod(wrapper)
 
 def magic(fn):
-    def wrapper(self, context, **kwargs):
+    def wrapper(self, context=None, **kwargs):
+        if context is None:
+            context = self._context
+        if context is None:
+            raise OrphanedObjectError(method=fn.__name__,
+                                      objtype=self.objname())
         if NovaObject.indirection_api:
             updates, result = NovaObject.indirection_api.object_action(
                 context, self, fn.__name__, self.version, kwargs)
@@ -97,6 +105,10 @@ def magic(fn):
 
 class UnsupportedObjectError(exception.NovaException):
     message = _('Unsupported object type %(objtype)s')
+
+
+class OrphanedObjectError(exception.NovaException):
+    message = _('Cannot call %(method)s on orphaned %(objtype)s object')
 
 
 class IncompatibleObjectVersion(exception.NovaException):

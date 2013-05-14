@@ -53,7 +53,10 @@ class MyObj(base.NovaObject):
 
     @base.magic
     def update_test(self, context):
-        self.bar = 'updated'
+        if context.project_id == 'alternate':
+            self.bar = 'alternate-context'
+        else:
+            self.bar = 'updated'
 
 class TestMetaclass(test.TestCase):
     def test_obj_tracking(self):
@@ -154,6 +157,20 @@ class TestObject(_ObjectTest):
         self.assertRaises(base.UnsupportedObjectError,
                           base.NovaObject.class_from_name, 'foo')
 
+    def test_with_alternate_context(self):
+        ctxt1 = context.RequestContext('foo', 'foo')
+        ctxt2 = context.RequestContext('bar', 'alternate')
+        obj = MyObj.get(ctxt1)
+        obj.update_test(ctxt2)
+        self.assertEqual(obj.bar, 'alternate-context')
+
+    def test_orphaned_object(self):
+        ctxt = context.get_admin_context()
+        obj = MyObj.get(ctxt)
+        obj._context = None
+        self.assertRaises(base.OrphanedObjectError,
+                          obj.update_test)
+
 
 @contextlib.contextmanager
 def things_temporarily_local():
@@ -219,7 +236,7 @@ class TestRemoteObject(_RemoteTest):
         obj = MyObj.get(ctxt)
         self.assertEqual(obj.bar, 'bar')
         self.assertEqual(self.remote_object_calls, [('MyObj', 'get')])
-        result = obj.marco(ctxt)
+        result = obj.marco()
         self.assertEqual(result, 'polo')
         self.assertEqual(self.remote_object_calls[1][1], 'marco')
 
@@ -247,9 +264,17 @@ class TestRemoteObject(_RemoteTest):
         obj = MyObj.get(ctxt)
         self.assertEqual(obj.foo, 1)
         self.assertEqual(self.remote_object_calls, [('MyObj', 'get')])
-        obj.update_test(ctxt)
+        obj.update_test()
         self.assertEqual(obj.bar, 'updated')
         self.assertEqual(self.remote_object_calls[1][1], 'update_test')
+
+    def test_with_alternate_context(self):
+        ctxt1 = context.RequestContext('foo', 'foo')
+        ctxt2 = context.RequestContext('bar', 'alternate')
+        obj = MyObj.get(ctxt1)
+        obj.update_test(ctxt2)
+        self.assertEqual(obj.bar, 'alternate-context')
+
 
 class TestMigrationObject(_ObjectTest):
     def test_hydration(self):
@@ -320,7 +345,7 @@ class TestRemoteMigrationObject(_RemoteTest):
         self.assertEqual(rmig.id, fake_migration['id'])
         self.assertEqual(rmig.source_node, fake_migration['source_node'])
         rmig.status = 'foo'
-        rmig.save(ctxt)
+        rmig.save()
 
 
 class TestInstanceObject(_ObjectTest):
@@ -433,5 +458,5 @@ class TestRemoteInstanceObject(_RemoteTest):
         self.mox.ReplayAll()
         inst = instance.Instance.get_by_uuid(ctxt, uuid=fake_uuid)
         self.assertEqual(inst.host, 'orig-host')
-        inst.refresh(ctxt)
+        inst.refresh()
         self.assertEqual(inst.host, 'new-host')
