@@ -265,10 +265,16 @@ class NovaObjProxy(nova.openstack.common.rpc.proxy.RpcProxy):
     magic. This could be moved back to Oslo someday if desired.
     """
 
-    def _deserialize_result(self, result):
+    def _deserialize_result(self, context, result):
         if isinstance(result, dict) and 'nova_object.name' in result:
             result = NovaObject.from_primitive(result)
+            result._context = context
         return result
+
+    def _serialize_msg_args(self, context, msg):
+        for argname, arg in msg['args'].items():
+            if hasattr(arg, 'to_primitive'):
+                msg['args'][argname] = arg.to_primitive()
 
 class NovaObjDispatcher(nova.openstack.common.rpc.dispatcher.RpcDispatcher):
     """A NovaObject-aware RpcDispatcher
@@ -277,7 +283,13 @@ class NovaObjDispatcher(nova.openstack.common.rpc.dispatcher.RpcDispatcher):
     magic. This could be moved back to Oslo someday if desired.
     """
 
-    def _deserialize_args(self, kwargs):
+    def _deserialize_args(self, context, kwargs):
         for argname, arg in kwargs.items():
             if isinstance(arg, dict) and 'nova_object.name' in arg:
                 kwargs[argname] = NovaObject.from_primitive(arg)
+                kwargs[argname]._context = context
+
+    def _serialize_result(self, context, result):
+        if hasattr(result, 'to_primitive'):
+            result = result.to_primitive()
+        return result

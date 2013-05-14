@@ -103,7 +103,7 @@ class RpcDispatcher(object):
         self.callbacks = callbacks
         super(RpcDispatcher, self).__init__()
 
-    def _deserialize_args(self, kwargs):
+    def _deserialize_args(self, context, kwargs):
         """Deserialize arguments to a function before dispatch.
 
         This is a hook called to deserialize (if necessary) arguments to
@@ -113,7 +113,7 @@ class RpcDispatcher(object):
         """
         return
 
-    def _serialize_result(self, result):
+    def _serialize_result(self, context, result):
         """Serialize the result of a call.
 
         This is called to serialize the result of a called method before
@@ -171,9 +171,9 @@ class RpcDispatcher(object):
             if not hasattr(proxyobj, method):
                 continue
             if is_compatible:
-                self._deserialize_args(kwargs)
+                self._deserialize_args(ctxt, kwargs)
                 result = getattr(proxyobj, method)(ctxt, **kwargs)
-                return self._serialize_result(result)
+                return self._serialize_result(ctxt, result)
 
         if had_compatible:
             raise AttributeError("No such RPC function '%s'" % method)
