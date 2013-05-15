@@ -246,7 +246,8 @@ class NovaObject(object):
     # dictish syntactic sugar
     def iteritems(self):
         for name in self.fields:
-            yield name, getattr(self, name)
+            if hasattr(self, get_attrname(name)):
+                yield name, getattr(self, name)
 
     def __getitem__(self, name):
         return getattr(self, name)
