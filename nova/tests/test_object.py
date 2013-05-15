@@ -138,6 +138,7 @@ class TestObject(_ObjectTest):
         obj.reset_changes()
         self.assertEqual(obj.bar, 'loaded!')
         expected = {'nova_object.name': 'MyObj',
+                    'nova_object.changes': ['bar'],
                     'nova_object.data': {'foo': 1,
                                          'bar': 'loaded!'}}
         self.assertEqual(obj.to_primitive(), expected)
@@ -416,6 +417,26 @@ class TestInstanceObject(_ObjectTest):
         self.assertTrue(hasattr(inst, '_metadata'))
         self.assertTrue(hasattr(inst, '_system_metadata'))
 
+    def test_load(self):
+        ctxt = context.get_admin_context()
+        self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
+        fake_uuid = self.fake_instance['uuid']
+        db.instance_get_by_uuid(ctxt, fake_uuid, []).AndReturn(
+            self.fake_instance)
+        fake_inst2 = dict(self.fake_instance,
+                          system_metadata=[{'key': 'foo', 'value': 'bar'}])
+        db.instance_get_by_uuid(ctxt, fake_uuid, ['system_metadata']
+                                ).AndReturn(fake_inst2)
+        self.mox.ReplayAll()
+        inst = instance.Instance.get_by_uuid(ctxt, uuid=fake_uuid)
+        self.assertFalse(hasattr(inst, '_system_metadata'))
+        sys_meta = inst.system_metadata
+        self.assertEqual(sys_meta, {'foo': 'bar'})
+        self.assertTrue(hasattr(inst, '_system_metadata'))
+        # Make sure we don't run load again
+        sys_meta2 = inst.system_metadata
+        self.assertEqual(sys_meta2, {'foo': 'bar'})
+
 
 class TestRemoteInstanceObject(_RemoteTest):
     def setUp(self):
@@ -460,3 +481,23 @@ class TestRemoteInstanceObject(_RemoteTest):
         self.assertEqual(inst.host, 'orig-host')
         inst.refresh()
         self.assertEqual(inst.host, 'new-host')
+
+    def test_load(self):
+        ctxt = context.get_admin_context()
+        self.mox.StubOutWithMock(db, 'instance_get_by_uuid')
+        fake_uuid = self.fake_instance['uuid']
+        db.instance_get_by_uuid(ctxt, fake_uuid, []).AndReturn(
+            self.fake_instance)
+        fake_inst2 = dict(self.fake_instance,
+                          system_metadata=[{'key': 'foo', 'value': 'bar'}])
+        db.instance_get_by_uuid(ctxt, fake_uuid, ['system_metadata']
+                                ).AndReturn(fake_inst2)
+        self.mox.ReplayAll()
+        inst = instance.Instance.get_by_uuid(ctxt, uuid=fake_uuid)
+        self.assertFalse(hasattr(inst, '_system_metadata'))
+        sys_meta = inst.system_metadata
+        self.assertEqual(sys_meta, {'foo': 'bar'})
+        self.assertTrue(hasattr(inst, '_system_metadata'))
+        # Make sure we don't run load again
+        sys_meta2 = inst.system_metadata
+        self.assertEqual(sys_meta2, {'foo': 'bar'})

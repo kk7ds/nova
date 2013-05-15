@@ -269,3 +269,19 @@ class Instance(base.NovaObject):
             if (hasattr(self, base.get_attrname(field)) and
                 self[field] != current[field]):
                 self[field] = current[field]
+
+    def load(self, attrname):
+        extra = []
+        if attrname == 'system_metadata':
+            extra.append('system_metadata')
+        elif attrname == 'metadata':
+            extra.append('metadata')
+
+        if not extra:
+            raise Exception('Cannot load "%s" from instance' % attrname)
+
+        # NOTE(danms): This could be optimized to just load the bits we need
+        instance = Instance.get_by_uuid(self._context,
+                                        uuid=self.uuid,
+                                        expected_attrs=extra)
+        self[attrname] = instance[attrname]
