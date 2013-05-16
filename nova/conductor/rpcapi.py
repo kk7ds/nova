@@ -18,11 +18,12 @@ from oslo.config import cfg
 
 from nova.object import base as object_base
 from nova.openstack.common import jsonutils
+import nova.openstack.common.rpc.proxy
 
 CONF = cfg.CONF
 
 
-class ConductorAPI(object_base.NovaObjProxy):
+class ConductorAPI(nova.openstack.common.rpc.proxy.RpcProxy):
     """Client side of the conductor RPC API
 
     API version history:
@@ -95,7 +96,8 @@ class ConductorAPI(object_base.NovaObjProxy):
     def __init__(self):
         super(ConductorAPI, self).__init__(
             topic=CONF.conductor.topic,
-            default_version=self.BASE_RPC_API_VERSION)
+            default_version=self.BASE_RPC_API_VERSION,
+            serializer=object_base.NovaObjectSerializer())
 
     def instance_update(self, context, instance_uuid, updates,
                         service=None):

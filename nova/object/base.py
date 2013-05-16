@@ -18,6 +18,8 @@ from nova import exception
 from nova.openstack.common import log as logging
 import nova.openstack.common.rpc.proxy
 import nova.openstack.common.rpc.dispatcher
+import nova.openstack.common.rpc.serializer
+
 
 LOG = logging.getLogger('object')
 
@@ -259,38 +261,16 @@ class NovaObject(object):
         return self[key]
 
 
-class NovaObjProxy(nova.openstack.common.rpc.proxy.RpcProxy):
-    """A NovaObject-aware RpcProxy.
+class NovaObjectSerializer(nova.openstack.common.rpc.serializer.Serializer):
+    """A NovaObject-aware Serializer"""
+    def serialize_entity(self, context, entity):
+        if (hasattr(entity, 'to_primitive') and
+            callable(entity.to_primitive)):
+            entity = entity.to_primitive()
+        return entity
 
-    This simply provides the Nova-specific object deserialization
-    magic. This could be moved back to Oslo someday if desired.
-    """
-
-    def _deserialize_result(self, context, result):
-        if isinstance(result, dict) and 'nova_object.name' in result:
-            result = NovaObject.from_primitive(result)
-            result._context = context
-        return result
-
-    def _serialize_msg_args(self, context, msg):
-        for argname, arg in msg['args'].items():
-            if hasattr(arg, 'to_primitive'):
-                msg['args'][argname] = arg.to_primitive()
-
-class NovaObjDispatcher(nova.openstack.common.rpc.dispatcher.RpcDispatcher):
-    """A NovaObject-aware RpcDispatcher
-
-    This simply provides the Nova-specific object deserialization
-    magic. This could be moved back to Oslo someday if desired.
-    """
-
-    def _deserialize_args(self, context, kwargs):
-        for argname, arg in kwargs.items():
-            if isinstance(arg, dict) and 'nova_object.name' in arg:
-                kwargs[argname] = NovaObject.from_primitive(arg)
-                kwargs[argname]._context = context
-
-    def _serialize_result(self, context, result):
-        if hasattr(result, 'to_primitive'):
-            result = result.to_primitive()
-        return result
+    def deserialize_entity(self, context, entity):
+        if isinstance(entity, dict) and 'nova_object.name' in entity:
+            entity = NovaObject.from_primitive(entity)
+            entity._context = context
+        return entity

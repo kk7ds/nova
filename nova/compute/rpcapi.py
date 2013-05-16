@@ -25,6 +25,7 @@ from nova.object import base as object_base
 from nova.openstack.common import jsonutils
 from nova.openstack.common import rpc
 import nova.openstack.common.rpc
+import nova.openstack.common.rpc.proxy
 
 rpcapi_opts = [
     cfg.StrOpt('compute_topic',
@@ -57,7 +58,7 @@ def _compute_topic(topic, ctxt, host, instance):
     return rpc.queue_get_for(ctxt, topic, host)
 
 
-class ComputeAPI(object_base.NovaObjProxy):
+class ComputeAPI(nova.openstack.common.rpc.proxy.RpcProxy):
     '''Client side of the compute rpc API.
 
     API version history:
@@ -182,7 +183,8 @@ class ComputeAPI(object_base.NovaObjProxy):
     def __init__(self):
         super(ComputeAPI, self).__init__(
                 topic=CONF.compute_topic,
-                default_version=self.BASE_RPC_API_VERSION)
+                default_version=self.BASE_RPC_API_VERSION,
+                serializer=object_base.NovaObjectSerializer())
 
     def add_aggregate_host(self, ctxt, aggregate, host_param, host,
                            slave_info=None):
