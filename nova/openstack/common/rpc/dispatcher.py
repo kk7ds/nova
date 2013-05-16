@@ -84,6 +84,7 @@ minimum version that supports the new parameter should be specified.
 """
 
 from nova.openstack.common.rpc import common as rpc_common
+from nova.openstack.common.rpc import serializer as rpc_serializer
 
 
 class RpcDispatcher(object):
@@ -93,7 +94,7 @@ class RpcDispatcher(object):
     contains a list of underlying managers that have an API_VERSION attribute.
     """
 
-    def __init__(self, callbacks):
+    def __init__(self, callbacks, serializer=None):
         """Initialize the rpc dispatcher.
 
         :param callbacks: List of proxy objects that are an instance
@@ -101,33 +102,25 @@ class RpcDispatcher(object):
                           object should have an RPC_API_VERSION attribute.
         """
         self.callbacks = callbacks
+        if serializer is None:
+            serializer = rpc_serializer.NoOpSerializer()
+        self.serializer = serializer
         super(RpcDispatcher, self).__init__()
 
     def _deserialize_args(self, context, kwargs):
-        """Deserialize arguments to a function before dispatch.
+        """Helper method called to deserialize args before dispatch.
 
-        This is a hook called to deserialize (if necessary) arguments to
-        the method we dispatch to.
+        This calls our serializer on each argument, returning a new set of
+        args that have been deserialized.
 
-        :param kwargs: The arguments to be passed to the method
+        :param kwargs: The arguments to be deserialized
+        :returns: A new set of deserialized args
         """
-        return
-
-    def _serialize_result(self, context, result):
-        """Serialize the result of a call.
-
-        This is called to serialize the result of a called method before
-        it is returned to the caller over the RPC bus.
-
-        The base implementation calls to_primitive() on the result, if it
-        exists.
-
-        :param result: The result of the method
-        :returns: The serialized (if necessary) form of result
-        """
-        if hasattr(result, 'to_primitive'):
-            result = result.to_primitive()
-        return result
+        new_kwargs = dict()
+        for argname, arg in kwargs.iteritems():
+            new_kwargs[argname] = self.serializer.deserialize_entity(context,
+                                                                     arg)
+        return new_kwargs
 
     def dispatch(self, ctxt, version, method, namespace, **kwargs):
         """Dispatch a message based on a requested version.
@@ -171,9 +164,9 @@ class RpcDispatcher(object):
             if not hasattr(proxyobj, method):
                 continue
             if is_compatible:
-                self._deserialize_args(ctxt, kwargs)
+                kwargs = self._deserialize_args(ctxt, kwargs)
                 result = getattr(proxyobj, method)(ctxt, **kwargs)
-                return self._serialize_result(ctxt, result)
+                return self.serializer.serialize_entity(ctxt, result)
 
         if had_compatible:
             raise AttributeError("No such RPC function '%s'" % method)
