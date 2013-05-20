@@ -447,8 +447,8 @@ class ConductorManager(manager.Manager):
     # house this for the moment
     def object_class_action(self, context, objname, objmethod,
                             objver, **kwargs):
-        objclass = nova_object.NovaObject.class_from_name(objname)
-        nova_object.check_object_version(objclass.version, objver)
+        objclass = nova_object.NovaObject.class_from_name(objname,
+                                                          objver)
         return getattr(objclass, objmethod)(context, **kwargs)
 
     def object_action(self, context, objinst, objmethod, objver,

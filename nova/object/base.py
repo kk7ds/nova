@@ -14,6 +14,8 @@
 
 """Nova common internal object model"""
 
+import collections
+
 from nova import exception
 from nova.openstack.common import log as logging
 import nova.openstack.common.rpc.proxy
@@ -61,11 +63,11 @@ class NovaObjectMetaclass(type):
     def __init__(cls, names, bases, dict_):
         if not hasattr(cls, '_obj_classes'):
             # This will be set in the 'NovaObject' class.
-            cls._obj_classes = {}
+            cls._obj_classes = collections.defaultdict(list)
         else:
             # Add the subclass to NovaObject._obj_classes
             make_class_properties(cls)
-            cls._obj_classes[cls.objname()] = cls
+            cls._obj_classes[cls.objname()].append(cls)
 
 
 # These are evil decorator things that return either a
@@ -114,7 +116,7 @@ class OrphanedObjectError(exception.NovaException):
 
 
 class IncompatibleObjectVersion(exception.NovaException):
-    pass
+    message = _('Version %(objver)s of %(objname)s is not supported')
 
 
 class IncompatibleObjectMajorVersion(IncompatibleObjectVersion):
@@ -170,13 +172,27 @@ class NovaObject(object):
         return cls.__name__
 
     @classmethod
-    def class_from_name(cls, objname):
-        try:
-            return cls._obj_classes[objname]
-        except KeyError:
+    def class_from_name(cls, objname, objver):
+        if objname not in cls._obj_classes:
             LOG.error(_('Unable to instantiate unregistered object type '
                         '%(objtype)s') % dict(objtype=objname))
             raise UnsupportedObjectError(objtype=objname)
+
+        compatible_match = None
+        for objclass in cls._obj_classes[objname]:
+            if objclass.version == objver:
+                return objclass
+            try:
+                check_object_version(objclass.version, objver)
+                compatible_match = objclass
+            except IncompatibleObjectVersion:
+                pass
+
+        if compatible_match:
+            return compatible_match
+
+        raise IncompatibleObjectVersion(objname=objname,
+                                        objver=objver)
 
     def _attr_from_primitive(self, attribute, value):
         handler = '_attr_%s_from_primitive' % attribute
@@ -185,17 +201,17 @@ class NovaObject(object):
         return value
 
     @classmethod
-    def from_primitive(cls, primitive, version='1.0'):
+    def from_primitive(cls, primitive):
         """Simple base-case hydration"""
         objname = primitive['nova_object.name']
-        objclass = cls.class_from_name(objname)
-        check_object_version(objclass.version, version)
+        objver = primitive['nova_object.version']
+        objdata = primitive['nova_object.data']
+        objclass = cls.class_from_name(objname, objver)
         self = objclass()
-        data = primitive['nova_object.data']
         for name in self.fields:
-            if name in data:
+            if name in objdata:
                 setattr(self, name,
-                        self._attr_from_primitive(name, data[name]))
+                        self._attr_from_primitive(name, objdata[name]))
         changes = primitive.get('nova_object.changes', [])
         self._changed_fields = set([x for x in changes if x in self.fields])
         return self
@@ -214,6 +230,7 @@ class NovaObject(object):
             if hasattr(self, get_attrname(name)):
                 primitive[name] = self._attr_to_primitive(name)
         obj = {'nova_object.name': self.objname(),
+               'nova_object.version': self.version,
                'nova_object.data': primitive}
         if self.what_changed():
             obj['nova_object.changes'] = list(self.what_changed())

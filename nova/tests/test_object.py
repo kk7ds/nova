@@ -77,7 +77,12 @@ class TestMetaclass(test.TestCase):
         class Test2(NewBaseClass):
             pass
 
-        expected = {'fake1': Test1, 'Test2': Test2}
+        class Test2v2(NewBaseClass):
+            @staticmethod
+            def objname():
+                return 'Test2'
+
+        expected = {'fake1': [Test1], 'Test2': [Test2, Test2v2]}
 
         self.assertEqual(expected, NewBaseClass._obj_classes)
         # The following should work, also.
@@ -94,17 +99,20 @@ class _ObjectTest(test.TestCase):
 class TestObject(_ObjectTest):
     def test_hydration_type_error(self):
         primitive = {'nova_object.name': 'MyObj',
+                     'nova_object.version': '1.5',
                      'nova_object.data': {'foo': 'a'}}
         self.assertRaises(ValueError, MyObj.from_primitive, primitive)
 
     def test_hydration(self):
         primitive = {'nova_object.name': 'MyObj',
+                     'nova_object.version': '1.5',
                      'nova_object.data': {'foo': 1}}
         obj = MyObj.from_primitive(primitive)
         self.assertEqual(obj.foo, 1)
 
     def test_dehydration(self):
         expected = {'nova_object.name': 'MyObj',
+                    'nova_object.version': '1.5',
                     'nova_object.data': {'foo': 1}}
         obj = MyObj()
         obj.foo = 1
@@ -138,6 +146,7 @@ class TestObject(_ObjectTest):
         obj.reset_changes()
         self.assertEqual(obj.bar, 'loaded!')
         expected = {'nova_object.name': 'MyObj',
+                    'nova_object.version': '1.5',
                     'nova_object.changes': ['bar'],
                     'nova_object.data': {'foo': 1,
                                          'bar': 'loaded!'}}
@@ -156,7 +165,7 @@ class TestObject(_ObjectTest):
 
     def test_unknown_objtype(self):
         self.assertRaises(base.UnsupportedObjectError,
-                          base.NovaObject.class_from_name, 'foo')
+                          base.NovaObject.class_from_name, 'foo', '1.0')
 
     def test_with_alternate_context(self):
         ctxt1 = context.RequestContext('foo', 'foo')
@@ -226,7 +235,7 @@ class _RemoteTest(_ObjectTest):
         # that of another object so that the client will claim to instantiate
         # MyObj with our version, which won't actually match what is in the
         # registry
-        MyObj2.objname = classmethod(lambda c: 'MyObj')
+        MyObj.objname = classmethod(lambda c: 'MyObj')
 
         return MyObj2
 
@@ -245,13 +254,13 @@ class TestRemoteObject(_RemoteTest):
         ctxt = context.get_admin_context()
         MyObj = self._prepare_for_version_permutation()
         MyObj.version = '2.0'
-        self.assertRaises(base.IncompatibleObjectMajorVersion, MyObj.get, ctxt)
+        self.assertRaises(base.IncompatibleObjectVersion, MyObj.get, ctxt)
 
     def test_remote_minor_version_greater(self):
         ctxt = context.get_admin_context()
         MyObj = self._prepare_for_version_permutation()
         MyObj.version = '1.6'
-        self.assertRaises(base.IncompatibleObjectMinorVersion, MyObj.get, ctxt)
+        self.assertRaises(base.IncompatibleObjectVersion, MyObj.get, ctxt)
 
     def test_remote_minor_version_less(self):
         ctxt = context.get_admin_context()
@@ -365,6 +374,7 @@ class TestInstanceObject(_ObjectTest):
         inst.launched_at = red_letter_date
         primitive = inst.to_primitive()
         expected = {'nova_object.name': 'Instance',
+                    'nova_object.version': '1.0',
                     'nova_object.data':
                         {'uuid': 'fake-uuid',
                          'launched_at': '1955-11-05T00:00:00Z'},
@@ -382,6 +392,7 @@ class TestInstanceObject(_ObjectTest):
         inst.access_ip_v6 = '::1'
         primitive = inst.to_primitive()
         expected = {'nova_object.name': 'Instance',
+                    'nova_object.version': '1.0',
                     'nova_object.data':
                         {'uuid': 'fake-uuid',
                          'access_ip_v4': '1.2.3.4',
