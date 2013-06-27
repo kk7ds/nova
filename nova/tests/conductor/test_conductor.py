@@ -18,6 +18,7 @@ import mox
 
 from nova.api.ec2 import ec2utils
 from nova.compute import flavors
+from nova.compute import task_states
 from nova.compute import utils as compute_utils
 from nova.compute import vm_states
 from nova import conductor
@@ -35,7 +36,9 @@ from nova.openstack.common.notifier import test_notifier
 from nova.openstack.common.rpc import common as rpc_common
 from nova.openstack.common import timeutils
 from nova import quota
+from nova.scheduler import host_manager
 from nova import test
+from nova.tests import fake_instance_actions
 
 
 FAKE_IMAGE_REF = 'fake-image-ref'
@@ -1208,6 +1211,7 @@ class _BaseTaskTestCase(object):
         self.user_id = 'fake'
         self.project_id = 'fake'
         self.context = FakeContext(self.user_id, self.project_id)
+        fake_instance_actions.stub_out_action_events(self.stubs)
 
     def test_migrate_server(self):
         self.mox.StubOutWithMock(self.conductor_manager.scheduler_rpcapi,
@@ -1276,6 +1280,91 @@ class _BaseTaskTestCase(object):
                 requested_networks='requested_networks',
                 security_groups='security_groups',
                 block_device_mapping='block_device_mapping')
+
+    def test_unshelve_instance_on_host(self):
+        instance_type = flavors.get_default_flavor()
+        system_metadata = flavors.save_flavor_info({}, instance_type)
+        instance = {'uuid': 'fake_uuid',
+                    'vm_state': vm_states.SHELVED,
+                    'system_metadata': system_metadata}
+
+        self.mox.StubOutWithMock(self.conductor_manager, '_instance_update')
+        self.mox.StubOutWithMock(self.conductor_manager.compute_rpcapi,
+                'start_instance')
+        self.mox.StubOutWithMock(self.conductor_manager.compute_rpcapi,
+                'unshelve_instance')
+
+        self.conductor_manager._instance_update(self.context,
+                instance['uuid'], task_state=task_states.POWERING_ON,
+                expected_task_state=task_states.UNSHELVING)
+        self.conductor_manager.compute_rpcapi.start_instance(self.context,
+                instance)
+        self.conductor_manager._instance_update(self.context,
+                instance['uuid'], system_metadata=system_metadata)
+        self.mox.ReplayAll()
+
+        system_metadata['shelved_at'] = timeutils.utcnow()
+        system_metadata['shelved_image_id'] = 'fake_image_id'
+        system_metadata['shelved_host'] = 'fake-mini'
+        self.conductor_manager.unshelve_instance(self.context, instance)
+
+    def test_unshelve_instance_schedule_and_rebuild(self):
+        instance_type = flavors.get_default_flavor()
+        system_metadata = flavors.save_flavor_info({}, instance_type)
+        instance = {'uuid': 'fake_uuid',
+                    'vm_state': vm_states.SHELVED_OFFLOADED,
+                    'system_metadata': system_metadata}
+
+        self.mox.StubOutWithMock(self.conductor_manager, '_instance_update')
+        self.mox.StubOutWithMock(self.conductor_manager, '_get_image')
+        self.mox.StubOutWithMock(self.conductor_manager, '_schedule_instances')
+        self.mox.StubOutWithMock(self.conductor_manager.compute_rpcapi,
+                'unshelve_instance')
+
+        self.conductor_manager._get_image(self.context,
+                'fake_image_id').AndReturn('fake_image')
+        self.conductor_manager._schedule_instances(self.context,
+                'fake_image', [], instance).AndReturn(
+                        [host_manager.HostState('host', None)])
+        self.conductor_manager.compute_rpcapi.unshelve_instance(self.context,
+                instance, 'host', 'fake_image')
+        self.conductor_manager._instance_update(self.context,
+                instance['uuid'], system_metadata=system_metadata)
+        self.mox.ReplayAll()
+
+        system_metadata['shelved_at'] = timeutils.utcnow()
+        system_metadata['shelved_image_id'] = 'fake_image_id'
+        system_metadata['shelved_host'] = 'fake-mini'
+        self.conductor_manager.unshelve_instance(self.context, instance)
+
+    def test_unshelve_instance_schedule_and_rebuild_volume_backed(self):
+        instance_type = flavors.get_default_flavor()
+        system_metadata = flavors.save_flavor_info({}, instance_type)
+        instance = {'uuid': 'fake_uuid',
+                    'vm_state': vm_states.SHELVED_OFFLOADED,
+                    'system_metadata': system_metadata}
+
+        self.mox.StubOutWithMock(self.conductor_manager, '_instance_update')
+        self.mox.StubOutWithMock(self.conductor_manager, '_get_image')
+        self.mox.StubOutWithMock(self.conductor_manager, '_schedule_instances')
+        self.mox.StubOutWithMock(self.conductor_manager.compute_rpcapi,
+                'unshelve_instance')
+
+        self.conductor_manager._get_image(self.context,
+                'fake_image_id').AndReturn(None)
+        self.conductor_manager._schedule_instances(self.context,
+                None, [], instance).AndReturn(
+                        [host_manager.HostState('host', None)])
+        self.conductor_manager.compute_rpcapi.unshelve_instance(self.context,
+                instance, 'host', None)
+        self.conductor_manager._instance_update(self.context, instance['uuid'],
+                system_metadata=system_metadata)
+        self.mox.ReplayAll()
+
+        system_metadata['shelved_at'] = timeutils.utcnow()
+        system_metadata['shelved_image_id'] = 'fake_image_id'
+        system_metadata['shelved_host'] = 'fake-mini'
+        self.conductor_manager.unshelve_instance(self.context, instance)
 
 
 class ConductorTaskTestCase(_BaseTaskTestCase, test.TestCase):

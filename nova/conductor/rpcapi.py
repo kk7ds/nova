@@ -520,6 +520,7 @@ class ComputeTaskAPI(nova.openstack.common.rpc.proxy.RpcProxy):
     1.0 - Initial version (empty).
     1.1 - Added unified migrate_server call.
     1.2 - Added build_instances
+    1.3 - Added unshelve_instance
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -552,3 +553,8 @@ class ComputeTaskAPI(nova.openstack.common.rpc.proxy.RpcProxy):
                 security_groups=security_groups,
                 block_device_mapping=block_device_mapping)
         self.cast(context, msg, version='1.2')
+
+    def unshelve_instance(self, context, instance):
+        instance_p = jsonutils.to_primitive(instance)
+        msg = self.make_msg('unshelve_instance', instance=instance_p)
+        self.cast(context, msg, version='1.3')

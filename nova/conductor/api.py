@@ -347,8 +347,7 @@ class LocalComputeTaskAPI(object):
     def __init__(self):
         # TODO(danms): This needs to be something more generic for
         # other/future users of this sort of functionality.
-        self._manager = utils.ExceptionHelper(
-                manager.ComputeTaskManager())
+        self._manager = utils.ExceptionHelper(manager.ComputeTaskManager())
 
     def migrate_server(self, context, instance, scheduler_hint, live, rebuild,
                   flavor, block_migration, disk_over_commit):
@@ -365,6 +364,10 @@ class LocalComputeTaskAPI(object):
                 requested_networks=requested_networks,
                 security_groups=security_groups,
                 block_device_mapping=block_device_mapping)
+
+    def unshelve_instance(self, context, instance):
+        utils.spawn_n(self._manager.unshelve_instance, context,
+                instance=instance)
 
 
 class API(LocalAPI):
@@ -432,3 +435,7 @@ class ComputeTaskAPI(object):
                 requested_networks=requested_networks,
                 security_groups=security_groups,
                 block_device_mapping=block_device_mapping)
+
+    def unshelve_instance(self, context, instance):
+        self.conductor_compute_rpcapi.unshelve_instance(context,
+                instance=instance)

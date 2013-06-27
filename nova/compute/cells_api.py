@@ -434,6 +434,18 @@ class ComputeCellsAPI(compute_api.API):
         self._cast_to_cells(context, instance, 'unrescue')
 
     @validate_cell
+    def shelve(self, context, instance):
+        """Shelve the given instance."""
+        super(ComputeCellsAPI, self).shelve(context, instance)
+        self._cast_to_cells(context, instance, 'shelve')
+
+    @validate_cell
+    def unshelve(self, context, instance):
+        """Unshelve the given instance."""
+        super(ComputeCellsAPI, self).unshelve(context, instance)
+        self._cast_to_cells(context, instance, 'unshelve')
+
+    @validate_cell
     def set_admin_password(self, context, instance, password=None):
         """Set the root/admin password for the given instance."""
         super(ComputeCellsAPI, self).set_admin_password(context, instance,

@@ -20,14 +20,19 @@ from nova.api.ec2 import ec2utils
 from nova import block_device
 from nova.cells import rpcapi as cells_rpcapi
 from nova.compute import api as compute_api
+from nova.compute import rpcapi as compute_rpcapi
+from nova.compute import task_states
 from nova.compute import utils as compute_utils
+from nova.compute import vm_states
 from nova.db import base
 from nova import exception
+from nova.image import glance
 from nova import manager
 from nova import network
 from nova.network.security_group import openstack_driver
 from nova import notifications
 from nova.objects import base as nova_object
+from nova.openstack.common import excutils
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.openstack.common.notifier import api as notifier
@@ -36,6 +41,7 @@ from nova.openstack.common import timeutils
 from nova import quota
 from nova.scheduler import rpcapi as scheduler_rpcapi
 from nova.scheduler import utils as scheduler_utils
+from nova import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -558,10 +564,11 @@ class ComputeTaskManager(base.Base):
     """
 
     RPC_API_NAMESPACE = 'compute_task'
-    RPC_API_VERSION = '1.2'
+    RPC_API_VERSION = '1.3'
 
     def __init__(self):
         super(ComputeTaskManager, self).__init__()
+        self.compute_rpcapi = compute_rpcapi.ComputeAPI()
         self.scheduler_rpcapi = scheduler_rpcapi.SchedulerAPI()
 
     @rpc_common.client_exceptions(exception.NoValidHost,
@@ -593,3 +600,63 @@ class ComputeTaskManager(base.Base):
                 admin_password=admin_password, injected_files=injected_files,
                 requested_networks=requested_networks, is_first_time=True,
                 filter_properties=filter_properties)
+
+    def _instance_update(self, context, instance_uuid, **kwargs):
+        (old_ref, instance_ref) = self.db.instance_update_and_get_original(
+                context, instance_uuid, kwargs)
+        notifications.send_update(context, old_ref, instance_ref, 'conductor')
+        return instance_ref
+
+    def _get_image(self, context, image_id):
+        if not image_id:
+            return None
+
+        (image_service, image_id) = glance.get_remote_image_service(context,
+                image_id)
+        return image_service.show(context, image_id)
+
+    def _schedule_instances(self, context, image, filter_properties,
+            *instances):
+        request_spec = scheduler_utils.build_request_spec(context, image,
+                instances)
+        # These are HostState objects, not hostnames
+        hosts = self.scheduler_rpcapi.select_destinations(context,
+                request_spec, filter_properties)
+        return hosts
+
+    def unshelve_instance(self, context, instance):
+        sys_meta = utils.instance_sys_meta(instance)
+
+        if instance['vm_state'] == vm_states.SHELVED:
+            self._instance_update(context, instance['uuid'],
+                    task_state=task_states.POWERING_ON,
+                    expected_task_state=task_states.UNSHELVING)
+            self.compute_rpcapi.start_instance(context, instance)
+        elif instance['vm_state'] == vm_states.SHELVED_OFFLOADED:
+            try:
+                with compute_utils.EventReporter(context, self.db,
+                        'get_image_info', instance['uuid']):
+                    image = self._get_image(context,
+                            sys_meta['shelved_image_id'])
+            except exception.ImageNotFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_('Unshelve attempted but vm_state not SHELVED '
+                                'or SHELVED_OFFLOADED'), instance=instance)
+                    self._instance_update(context, instance['uuid'],
+                            vm_state=vm_states.ERROR)
+
+            hosts = self._schedule_instances(context, image, [], instance)
+            host = hosts.pop(0).host
+            self.compute_rpcapi.unshelve_instance(context, instance, host,
+                    image)
+        else:
+            LOG.error(_('Unshelve attempted but vm_state not SHELVED or '
+                        'SHELVED_OFFLOADED'), instance=instance)
+            self._instance_update(context, instance['uuid'],
+                    vm_state=vm_states.ERROR)
+            return
+
+        for key in ['shelved_at', 'shelved_image_id', 'shelved_host']:
+            del(sys_meta[key])
+        self._instance_update(context, instance['uuid'],
+                system_metadata=sys_meta)
