@@ -555,6 +555,5 @@ class ComputeTaskAPI(nova.openstack.common.rpc.proxy.RpcProxy):
         self.cast(context, msg, version='1.2')
 
     def unshelve_instance(self, context, instance):
-        instance_p = jsonutils.to_primitive(instance)
-        msg = self.make_msg('unshelve_instance', instance=instance_p)
+        msg = self.make_msg('unshelve_instance', instance=instance)
         self.cast(context, msg, version='1.3')

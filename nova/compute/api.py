@@ -2211,9 +2211,8 @@ class API(base.Base):
         Shuts down an instance and frees it up to be removed from the
         hypervisor.
         """
-        instance = self.update(context, instance,
-                task_state=task_states.SHELVING,
-                expected_task_state=None)
+        instance.task_state = task_states.SHELVING
+        instance.save(expected_task_state=None)
 
         self._record_action_start(context, instance, instance_actions.SHELVE)
 
@@ -2235,9 +2234,8 @@ class API(base.Base):
     @check_instance_state(vm_state=[vm_states.SHELVED], task_state=[None])
     def shelve_offload(self, context, instance):
         """Remove a shelved instance from the hypervisor."""
-        instance = self.update(context, instance,
-                task_state=task_states.SHELVING_OFFLOADING,
-                expected_task_state=None)
+        instance.task_state = task_states.SHELVING_OFFLOADING
+        instance.save(expected_task_state=None)
 
         self.compute_rpcapi.shelve_offload_instance(context, instance=instance)
 
@@ -2247,9 +2245,8 @@ class API(base.Base):
         vm_states.SHELVED_OFFLOADED], task_state=[None])
     def unshelve(self, context, instance):
         """Restore a shelved instance."""
-        instance = self.update(context, instance,
-                task_state=task_states.UNSHELVING,
-                expected_task_state=None)
+        instance.task_state = task_states.UNSHELVING
+        instance.save(expected_task_state=None)
 
         self._record_action_start(context, instance, instance_actions.UNSHELVE)
 

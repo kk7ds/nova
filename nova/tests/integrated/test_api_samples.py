@@ -1538,6 +1538,7 @@ class ShelveJsonTest(ServersSampleBase):
     def test_shelve_offload(self):
         uuid = self._post_server()
         self._test_server_action(uuid, 'shelve')
+        # Hrm, isn't this a race?
         self._test_server_action(uuid, 'shelveOffload')
 
     def test_unshelve(self):

@@ -36,7 +36,8 @@ class ShelveController(wsgi.Controller):
 
     def _get_instance(self, context, instance_id):
         try:
-            return self.compute_api.get(context, instance_id)
+            return self.compute_api.get(context, instance_id,
+                                        want_objects=True)
         except exception.InstanceNotFound:
             msg = _("Server not found")
             raise exc.HTTPNotFound(msg)

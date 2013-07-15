@@ -3010,7 +3010,7 @@ class ComputeManager(manager.SchedulerDependentManager):
         offload the shelved instance after a period of time.
 
         :param context: request context
-        :param instance: an Instance dict
+        :param instance: an Instance object
         :param image_id: an image id to snapshot to.
         """
         self.conductor_api.notify_usage_exists(context, instance,
@@ -3025,24 +3025,24 @@ class ComputeManager(manager.SchedulerDependentManager):
                         task_states.SHELVING_IMAGE_UPLOADING}
             task_state = shelving_state_map[task_state]
             exp_state = shelving_state_map[exp_state]
-            return self._instance_update(context, instance['uuid'],
-                    task_state=task_state,
-                    expected_task_state=exp_state)
+            instance.task_state = task_state
+            instance.save(expected_task_state=exp_state)
 
         self.driver.power_off(instance)
         current_power_state = self._get_power_state(context, instance)
         self.driver.snapshot(context, instance, image_id, update_task_state)
 
-        system_meta = utils.metadata_to_dict(instance['system_metadata'])
-        system_meta['shelved_at'] = timeutils.strtime()
-        system_meta['shelved_image_id'] = image_id
-        system_meta['shelved_host'] = self.host
-        instance = self._instance_update(context,
-                instance['uuid'], power_state=current_power_state,
-                vm_state=vm_states.SHELVED, task_state=None,
-                expected_task_state=[task_states.SHELVING,
-                    task_states.SHELVING_IMAGE_UPLOADING],
-                system_metadata=system_meta)
+        sys_meta = instance.system_metadata
+        sys_meta['shelved_at'] = timeutils.strtime()
+        sys_meta['shelved_image_id'] = image_id
+        sys_meta['shelved_host'] = self.host
+        instance.system_metadata = sys_meta
+        instance.vm_state = vm_states.SHELVED
+        instance.task_state = None
+        instance.power_state = current_power_state
+        instance.save(expected_task_state=[
+                task_states.SHELVING,
+                task_states.SHELVING_IMAGE_UPLOADING])
         self._notify_about_instance_usage(context, instance, 'shelve.end')
 
     @exception.wrap_exception(notifier=notifier, publisher_id=publisher_id())
@@ -3071,12 +3071,13 @@ class ComputeManager(manager.SchedulerDependentManager):
         self.driver.destroy(instance, self._legacy_nw_info(network_info),
                 block_device_info)
 
-        self._instance_update(context, instance['uuid'],
-                power_state=current_power_state, host=None, node=None,
-                vm_state=vm_states.SHELVED_OFFLOADED, task_state=None,
-                expected_task_state=[task_states.SHELVING,
-                    task_states.SHELVING_OFFLOADING])
-
+        instance.power_state = current_power_state
+        instance.host = None
+        instance.node = None
+        instance.vm_state = vm_states.SHELVED_OFFLOADED
+        instance.task_state = None
+        instance.save(expected_task_state=[task_states.SHELVING,
+                                           task_states.SHELVING_OFFLOADING])
         self._notify_about_instance_usage(context, instance,
                 'shelve_offload.end')
 
@@ -3099,20 +3100,19 @@ class ComputeManager(manager.SchedulerDependentManager):
 
     def _unshelve_instance_cleanup(self, instance):
         """Remove data from the instance that may cause side effects."""
-        instance['key_data'] = None
-        instance['auto_disk_config'] = None
-        return instance
+        instance.key_data = None
+        instance.auto_disk_config = False
 
     def _unshelve_instance(self, context, instance, image):
         self._notify_about_instance_usage(context, instance, 'unshelve.start')
-        self._instance_update(context, instance['uuid'],
-                task_state=task_states.SPAWNING)
+        instance.task_state = task_states.SPAWNING
+        instance.save()
 
         network_info = self._get_instance_nw_info(context, instance)
         bdms = self.conductor_api.block_device_mapping_get_all_by_instance(
                 context, instance)
         block_device_info = self._prep_block_device(context, instance, bdms)
-        instance = self._unshelve_instance_cleanup(instance)
+        self._unshelve_instance_cleanup(instance)
         try:
             self.driver.spawn(context, instance, image, injected_files=[],
                     admin_password=None,
@@ -3126,12 +3126,12 @@ class ComputeManager(manager.SchedulerDependentManager):
             image_service = glance.get_default_image_service()
             image_service.delete(context, image['id'])
 
-        current_power_state = self._get_power_state(context, instance)
-        self._instance_update(context, instance['uuid'],
-                power_state=current_power_state, vm_state=vm_states.ACTIVE,
-                task_state=None,
-                expected_task_state=task_states.SPAWNING,
-                launched_at=timeutils.utcnow())
+        instance.power_state = self._get_power_state(context, instance)
+        instance.vm_state = vm_states.ACTIVE
+        instance.task_state = None
+        instance.launched_at = timeutils.utcnow()
+        print instance.obj_what_changed()
+        instance.save(expected_task_state=task_states.SPAWNING)
         self._notify_about_instance_usage(context, instance, 'unshelve.end')
 
     @reverts_task_state

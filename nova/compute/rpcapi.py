@@ -670,23 +670,20 @@ class ComputeAPI(nova.openstack.common.rpc.proxy.RpcProxy):
                 topic=_compute_topic(self.topic, ctxt, None, instance))
 
     def shelve_instance(self, ctxt, instance, image_id=None):
-        instance_p = jsonutils.to_primitive(instance)
         self.cast(ctxt, self.make_msg('shelve_instance',
-            instance=instance_p, image_id=image_id),
+            instance=instance, image_id=image_id),
             topic=_compute_topic(self.topic, ctxt, None, instance),
             version='2.31')
 
     def shelve_offload_instance(self, ctxt, instance):
-        instance_p = jsonutils.to_primitive(instance)
         self.cast(ctxt, self.make_msg('shelve_offload_instance',
-            instance=instance_p),
+            instance=instance),
             topic=_compute_topic(self.topic, ctxt, None, instance),
             version='2.31')
 
     def unshelve_instance(self, ctxt, instance, host, image=None):
-        instance_p = jsonutils.to_primitive(instance)
         self.cast(ctxt, self.make_msg('unshelve_instance',
-            instance=instance_p, image=image),
+            instance=instance, image=image),
             topic=_compute_topic(self.topic, ctxt, host, None),
             version='2.31')
 
