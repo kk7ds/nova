@@ -21,6 +21,7 @@ from nova.conductor import rpcapi as conductor_rpcapi
 from nova import context
 from nova import exception
 from nova.objects import base
+from nova.objects import fields
 from nova.objects import utils
 from nova.openstack.common import timeutils
 from nova import test
@@ -28,9 +29,9 @@ from nova import test
 
 class MyObj(base.NovaPersistentObject, base.NovaObject):
     version = '1.5'
-    fields = {'foo': int,
-              'bar': str,
-              'missing': str,
+    fields = {'foo': fields.IntegerField(),
+              'bar': fields.StringField(),
+              'missing': fields.StringField(),
               }
 
     @staticmethod
@@ -96,7 +97,7 @@ class RandomMixInWithNoFields(object):
 
 
 class TestSubclassedObject(RandomMixInWithNoFields, MyObj):
-    fields = {'new_field': str}
+    fields = {'new_field': fields.StringField()}
 
 
 class TestMetaclass(test.TestCase):
@@ -218,7 +219,7 @@ class TestUtils(test.TestCase):
 
     def test_obj_to_primitive_list(self):
         class MyList(base.ObjectListBase, base.NovaObject):
-            pass
+            fields = {'objects': fields.ListField(int)}
         mylist = MyList()
         mylist.objects = [1, 2, 3]
         self.assertEqual([1, 2, 3], base.obj_to_primitive(mylist))
@@ -637,7 +638,7 @@ class TestRemoteObject(_RemoteTest, _TestObject):
 class TestObjectListBase(test.TestCase):
     def test_list_like_operations(self):
         class Foo(base.ObjectListBase, base.NovaObject):
-            pass
+            fields = {'objects': fields.ListField(int)}
 
         objlist = Foo()
         objlist._context = 'foo'
@@ -656,7 +657,7 @@ class TestObjectListBase(test.TestCase):
             pass
 
         class Bar(base.NovaObject):
-            fields = {'foo': str}
+            fields = {'foo': fields.StringField()}
 
         obj = Foo()
         obj.objects = []
